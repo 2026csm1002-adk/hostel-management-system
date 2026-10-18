@@ -1,24 +1,43 @@
-import { memory, type StudentRow } from "@/server/db/memory-store";
+import { db } from "@/server/db/client";
+import { student } from "@/server/db/schema";
+import { eq } from "drizzle-orm";
 
-// TEMPORARY: reads/writes the in-memory store.
-// DB SWAP: each method becomes one Drizzle query on the `student` table, e.g.
-//   findById:    db.select().from(student).where(eq(student.studentId, id)).limit(1)
-//   findByEmail: db.select().from(student).where(eq(student.googleEmail, email)).limit(1)
-//   upsert:      db.insert(student).values(row).onConflictDoUpdate({ target: student.studentId, set: {...} })
+export type StudentRow = typeof student.$inferSelect;
+export type NewStudentRow = typeof student.$inferInsert;
 
 export const studentRepo = {
   async findById(studentId: string): Promise<StudentRow | undefined> {
-    const row = memory.students.find((s) => s.studentId === studentId);
-    return row && { ...row };
+    const [row] = await db
+      .select()
+      .from(student)
+      .where(eq(student.studentId, studentId))
+      .limit(1);
+
+    return row;
   },
+
   async findByEmail(email: string): Promise<StudentRow | undefined> {
-    const row = memory.students.find((s) => s.googleEmail === email);
-    return row && { ...row };
+    const [row] = await db
+      .select()
+      .from(student)
+      .where(eq(student.googleEmail, email))
+      .limit(1);
+
+    return row;
   },
-  async upsert(row: StudentRow): Promise<StudentRow> {
-    const i = memory.students.findIndex((s) => s.studentId === row.studentId);
-    if (i >= 0) memory.students[i] = { ...row };
-    else memory.students.push({ ...row });
-    return { ...row };
+
+  async upsert(row: NewStudentRow): Promise<StudentRow> {
+    const { studentId, ...updateFields } = row;
+
+    const [upserted] = await db
+      .insert(student)
+      .values(row)
+      .onConflictDoUpdate({
+        target: student.studentId,
+        set: updateFields,
+      })
+      .returning();
+
+    return upserted;
   },
 };

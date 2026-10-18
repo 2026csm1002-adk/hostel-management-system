@@ -2,9 +2,8 @@ import { HOSTELS } from "@/lib/constants";
 import { floorFromRoom, floorLabel } from "@/lib/room";
 import { parseStudentEmail } from "@/lib/student-identity";
 import type { ProfileInput } from "@/lib/validators/profile.schema";
-import type { StudentRow } from "@/server/db/memory-store";
 import { ConflictError, ValidationError } from "@/server/errors";
-import { studentRepo } from "@/server/repositories/student.repo";
+import { studentRepo, type StudentRow } from "@/server/repositories/student.repo";
 import type { StudentProfile } from "@/types";
 
 /** Database row -> what the browser receives (adds hostel name and the floor). */

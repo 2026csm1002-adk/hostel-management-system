@@ -19,6 +19,7 @@
     "db:seed": "tsx --env-file=.env.local scripts/seed.ts"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
     "drizzle-orm": "^0.44.0",
     "next": "^16.0.0",
     "next-auth": "beta",
@@ -27,7 +28,6 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "@libsql/client": "^0.18.0",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^20.0.0",
     "@types/react": "^19.0.0",

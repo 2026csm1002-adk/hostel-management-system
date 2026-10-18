@@ -6,10 +6,16 @@ const globalForDb = globalThis as unknown as {
   client: Client | undefined;
 };
 
+const databaseUrl = process.env.DATABASE_URL;
+
+if (!databaseUrl) {
+  throw new Error("DATABASE_URL environment variable is not defined.");
+}
+
 const client =
   globalForDb.client ??
   createClient({
-    url: process.env.DATABASE_URL || "file:local.db",
+    url: databaseUrl,
     authToken: process.env.TURSO_AUTH_TOKEN || undefined,
   });
 
