@@ -14,6 +14,13 @@ function assertBookable(date: string) {
   }
 }
 
+/** The floor of the student's room. Only fails for an old profile whose room no longer fits its hostel. */
+function studentFloor(student: { roomNo: string; hostelId: string }): number {
+  const floor = floorFromRoom(student.roomNo, student.hostelId);
+  if (floor === null) throw new ValidationError("Please correct your room number in your profile.");
+  return floor;
+}
+
 function toDTO(row: CleaningBookingRow): CleaningBookingDTO {
   return {
     id: row.bookingId,
@@ -33,7 +40,7 @@ export const cleaningService = {
   async getAvailability(email: string, date: string): Promise<SlotAvailability[]> {
     const student = await profileService.requireProfile(email);
     assertBookable(date);
-    const floor = floorFromRoom(student.roomNo) as number;
+    const floor = studentFloor(student);
     const rows = await cleaningBookingRepo.listForDay(student.hostelId, floor, date);
 
     return SLOT_STARTS.map((slotStart) => {
@@ -52,7 +59,7 @@ export const cleaningService = {
   async bookSlot(email: string, input: BookingInput): Promise<CleaningBookingDTO> {
     const student = await profileService.requireProfile(email);
     assertBookable(input.date);
-    const floor = floorFromRoom(student.roomNo) as number;
+    const floor = studentFloor(student);
 
     const duplicate = await cleaningBookingRepo.findByRoomAndSlot(
       student.hostelId,

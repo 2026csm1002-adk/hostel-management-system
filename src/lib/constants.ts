@@ -45,14 +45,18 @@ export const SWAP_STATUSES = [
   "Waiting",
 ] as const;
 
+// Every hostel with its wings and how its rooms are numbered.
+//   roomsStartAt: 100 -> rooms start at 101 (101-199 is the ground floor)
+//   roomsStartAt: 1   -> rooms start at 001 (001-099 is the ground floor, 101-199 the 1st floor)
+// Used by the profile form (wing list), the profile validation and the floor calculation (src/lib/room.ts).
 export const HOSTELS = [
-  { id: "satluj", name: "Satluj", type: "Boys" },
-  { id: "beas", name: "Beas", type: "Boys" },
-  { id: "chenab", name: "Chenab", type: "Boys" },
-  { id: "brahmaputra", name: "Brahmaputra", type: "Boys" },
-  { id: "raavi", name: "Raavi", type: "Girls" },
-  { id: "chintpurni", name: "Chintpurni", type: "Girls" },
-  { id: "t6", name: "T6", type: "Girls" },
+  { id: "satluj", name: "Satluj", type: "Boys", wings: ["SE", "SW"], roomsStartAt: 100 },
+  { id: "beas", name: "Beas", type: "Boys", wings: ["BE", "BW"], roomsStartAt: 100 },
+  { id: "chenab", name: "Chenab", type: "Boys", wings: ["CE", "CW"], roomsStartAt: 100 },
+  { id: "brahmaputra", name: "Brahmaputra", type: "Boys", wings: ["BHN", "BHS"], roomsStartAt: 1 },
+  { id: "raavi", name: "Raavi", type: "Girls", wings: ["RE", "RC", "RW"], roomsStartAt: 1 },
+  { id: "chintpurni", name: "Chintpurni", type: "Girls", wings: ["CH"], roomsStartAt: 1 },
+  { id: "t6", name: "T6", type: "Girls", wings: ["C", "D", "E", "F", "G"], roomsStartAt: 100 },
 ] as const;
 
 // Where each role lands after login. Used by src/app/page.tsx and src/proxy.ts
@@ -62,3 +66,7 @@ export const ROLE_HOME = {
   Supervisor: "/supervisor/board",
   Warden: "/warden/swaps",
 } as const;
+
+// Floor columns always shown on the supervisor board (0 = ground). A floor above this appears
+// automatically once a booking exists on it.
+export const DEFAULT_FLOOR_COUNT = 4;

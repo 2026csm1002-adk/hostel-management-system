@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { COURSES, HOSTELS } from "@/lib/constants";
 import { apiFetch, errorMessage } from "@/lib/api-client";
+import { wingsOf } from "@/lib/hostels";
 import { floorFromRoom, floorLabel } from "@/lib/room";
 import type { StudentProfile } from "@/types";
 import { useProfile } from "./useProfile";
@@ -48,7 +49,8 @@ function ProfileFields({
   profile: StudentProfile | null;
   onSaved: (p: StudentProfile) => void;
 }) {
-  const [fullName, setFullName] = useState(profile?.fullName ?? identity.name);
+  // The name comes from the institute account and cannot be edited here.
+  const fullName = profile?.fullName ?? identity.name;
   const [hostelId, setHostelId] = useState(profile?.hostelId ?? "");
   const [wing, setWing] = useState(profile?.wing ?? "");
   const [roomNo, setRoomNo] = useState(profile?.roomNo ?? "");
@@ -61,7 +63,16 @@ function ProfileFields({
   // Roll no / batch are typed only when the email does not contain them (and never after the first save).
   const rollEditable = !profile && !identity.rollNo;
   const batchEditable = !profile && !identity.batch;
-  const floor = floorFromRoom(roomNo);
+  const wings = wingsOf(hostelId);
+  const floor = floorFromRoom(roomNo, hostelId);
+
+  // Each hostel has its own wings. Changing hostel clears a wing that does not exist there,
+  // and a hostel with a single wing (for example Chintpurni) is filled in automatically.
+  function chooseHostel(id: string) {
+    setHostelId(id);
+    const options = wingsOf(id);
+    setWing((current) => (options.includes(current) ? current : options.length === 1 ? options[0] : ""));
+  }
 
   async function save() {
     setBusy(true);
@@ -93,7 +104,7 @@ function ProfileFields({
     <div className="rounded-[3px] border border-line bg-white p-[18px]">
       <div className="grid gap-x-4 gap-y-3.5 sm:grid-cols-2">
         <Field label="Full name">
-          <input className={inputClass} value={fullName} onChange={(e) => setFullName(e.target.value)} />
+          <ReadOnly value={fullName} />
         </Field>
         <Field label="Roll No">
           {rollEditable ? (
@@ -113,7 +124,7 @@ function ProfileFields({
           )}
         </Field>
         <Field label="Hostel">
-          <select className={inputClass} value={hostelId} onChange={(e) => setHostelId(e.target.value)}>
+          <select className={inputClass} value={hostelId} onChange={(e) => chooseHostel(e.target.value)}>
             <option value="">Select hostel</option>
             {(["Boys", "Girls"] as const).map((type) => (
               <optgroup key={type} label={`${type}' hostels`}>
@@ -127,13 +138,30 @@ function ProfileFields({
           </select>
         </Field>
         <Field label="Wing">
-          <input className={inputClass} value={wing} placeholder="e.g. SE" onChange={(e) => setWing(e.target.value)} />
+          <select
+            className={inputClass}
+            value={wing}
+            disabled={!hostelId}
+            onChange={(e) => setWing(e.target.value)}
+          >
+            <option value="">{hostelId ? "Select wing" : "Select hostel first"}</option>
+            {wings.map((w) => (
+              <option key={w} value={w}>
+                {w}
+              </option>
+            ))}
+          </select>
         </Field>
         <Field label="Room number">
-          <input className={inputClass} value={roomNo} placeholder="e.g. 207" onChange={(e) => setRoomNo(e.target.value)} />
+          <input
+            className={inputClass}
+            value={roomNo}
+            placeholder={hostelId ? "e.g. 207" : "Select hostel first"}
+            onChange={(e) => setRoomNo(e.target.value)}
+          />
         </Field>
         <Field label="Floor (from room number)">
-          <ReadOnly value={floor === null ? "" : floorLabel(floor)} placeholder="Enter a room number" />
+          <ReadOnly value={floor === null ? "" : floorLabel(floor)} placeholder="Enter a valid room number" />
         </Field>
         <Field label="Course">
           <select className={inputClass} value={course} onChange={(e) => setCourse(e.target.value)}>

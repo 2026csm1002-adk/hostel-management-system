@@ -1,14 +1,16 @@
 import { HOSTELS } from "@/lib/constants";
-import { floorFromRoom, floorLabel } from "@/lib/room";
+import { wingError } from "@/lib/hostels";
+import { floorFromRoom, floorLabel, roomError } from "@/lib/room";
 import { parseStudentEmail } from "@/lib/student-identity";
 import type { ProfileInput } from "@/lib/validators/profile.schema";
+import type { StudentRow } from "@/server/db/memory-store";
 import { ConflictError, ValidationError } from "@/server/errors";
-import { studentRepo, type StudentRow } from "@/server/repositories/student.repo";
+import { studentRepo } from "@/server/repositories/student.repo";
 import type { StudentProfile } from "@/types";
 
 /** Database row -> what the browser receives (adds hostel name and the floor). */
 export function toProfile(row: StudentRow): StudentProfile {
-  const floor = floorFromRoom(row.roomNo) ?? 0;
+  const floor = floorFromRoom(row.roomNo, row.hostelId) ?? 0;
   return {
     studentId: row.studentId,
     fullName: row.fullName,
@@ -51,9 +53,9 @@ export const profileService = {
     if (!existing && (await studentRepo.findById(studentId))) {
       throw new ConflictError("This roll number already belongs to another profile.");
     }
-    if (floorFromRoom(data.roomNo) === null) {
-      throw new ValidationError("Enter a valid room number.");
-    }
+    // The same checks as the form validation, because this service is also called without it.
+    const problem = wingError(data.hostelId, data.wing) ?? roomError(data.hostelId, data.roomNo);
+    if (problem) throw new ValidationError(problem);
 
     const saved = await studentRepo.upsert({
       studentId,
