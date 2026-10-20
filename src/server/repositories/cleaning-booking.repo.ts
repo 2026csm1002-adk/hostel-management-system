@@ -65,6 +65,22 @@ export const cleaningBookingRepo = {
     return { ...row };
   },
 
+  /**
+   * Bookings from `fromDate` to `toDate` (both included), for one hostel or all hostels.
+   * DB SWAP: select().from(cleaningBooking).where(and(gte(bookingDate, from), lte(bookingDate, to),
+   *          hostelId ? eq(hostelId, ...) : undefined))
+   */
+  async listForRange(fromDate: string, toDate: string, hostelId?: string): Promise<CleaningBookingRow[]> {
+    return memory.cleaningBookings
+      .filter(
+        (b) =>
+          b.bookingDate >= fromDate &&
+          b.bookingDate <= toDate &&
+          (hostelId === undefined || b.hostelId === hostelId),
+      )
+      .map((b) => ({ ...b }));
+  },
+
   async listByStudent(studentId: string): Promise<CleaningBookingRow[]> {
     return memory.cleaningBookings.filter((b) => b.studentId === studentId).map((b) => ({ ...b }));
   },

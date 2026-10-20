@@ -82,3 +82,18 @@ export type SwapDTO = {
   assignedRoom: string | null;
   wardenComment: string | null;
 };
+
+// ---- Supervisor board -------------------------------------------------------
+
+export type BoardCell = { floor: number; rooms: string[] }; // rooms in seat order (max 3)
+export type BoardSlot = { slotStart: string; label: string; cells: BoardCell[] };
+export type BoardDay = { date: string; slots: BoardSlot[] };
+
+export type BoardDTO = {
+  hostelId: string;
+  hostelName: string;
+  today: string;    // YYYY-MM-DD; days[0] is today
+  floors: number[]; // columns of the board
+  days: BoardDay[]; // today .. today + 4
+  stats: { booked: number; fullSlots: number; totalSlots: number };
+};

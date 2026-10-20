@@ -1,12 +1,20 @@
-import { MAX_ROOMS_PER_SLOT, SLOT_STARTS } from "@/lib/constants";
-import { isValidISODate, isWithinBookingWindow, slotLabel } from "@/lib/dates";
+import {
+  BOOKING_MAX_DAYS_AHEAD,
+  DEFAULT_FLOOR_COUNT,
+  HOSTELS,
+  MAX_ROOMS_PER_SLOT,
+  SLOT_STARTS,
+} from "@/lib/constants";
+import { addDays, isValidISODate, isWithinBookingWindow, slotLabel, todayISO } from "@/lib/dates";
 import { floorFromRoom, floorLabel } from "@/lib/room";
 import type { BookingInput } from "@/lib/validators/cleaning.schema";
 import type { CleaningBookingRow } from "@/server/db/memory-store";
 import { ConflictError, ValidationError } from "@/server/errors";
+import { requireRole } from "@/server/services/auth.service";
+import { exportService, type ExportFile, type ScheduleRow } from "@/server/services/export.service";
 import { cleaningBookingRepo } from "@/server/repositories/cleaning-booking.repo";
 import { profileService } from "@/server/services/profile.service";
-import type { CleaningBookingDTO, SlotAvailability } from "@/types";
+import type { BoardDTO, CleaningBookingDTO, SessionUser, SlotAvailability } from "@/types";
 
 function assertBookable(date: string) {
   if (!isValidISODate(date) || !isWithinBookingWindow(date)) {
@@ -91,4 +99,84 @@ export const cleaningService = {
       .sort((a, b) => (a.bookingDate + a.slotStart).localeCompare(b.bookingDate + b.slotStart))
       .map(toDTO);
   },
+
+  // ---------------------------------------------------------------------------
+  // Supervisor
+  // ---------------------------------------------------------------------------
+
+  /** Today .. today + 4 for one hostel: for every slot and floor, which rooms are booked. */
+  async getBoard(user: SessionUser, hostelId: string): Promise<BoardDTO> {
+    requireRole(user, ["Supervisor"]);
+    const hostel = HOSTELS.find((h) => h.id === hostelId);
+    if (!hostel) throw new ValidationError("Choose a valid hostel.");
+
+    const today = todayISO();
+    const dates = windowDates(today);
+    const rows = await cleaningBookingRepo.listForRange(dates[0], dates[dates.length - 1], hostelId);
+
+    const topFloor = Math.max(DEFAULT_FLOOR_COUNT - 1, ...rows.map((r) => r.floor));
+    const floors = Array.from({ length: topFloor + 1 }, (_, f) => f);
+
+    let fullSlots = 0;
+    const days = dates.map((date) => ({
+      date,
+      slots: SLOT_STARTS.map((slotStart) => ({
+        slotStart,
+        label: slotLabel(slotStart),
+        cells: floors.map((floor) => {
+          const rooms = rows
+            .filter((r) => r.bookingDate === date && r.slotStart === slotStart && r.floor === floor)
+            .sort((a, b) => a.seat - b.seat)
+            .map((r) => r.roomNo);
+          if (rooms.length >= MAX_ROOMS_PER_SLOT) fullSlots++;
+          return { floor, rooms };
+        }),
+      })),
+    }));
+
+    return {
+      hostelId,
+      hostelName: hostel.name,
+      today,
+      floors,
+      days,
+      stats: {
+        booked: rows.length,
+        fullSlots,
+        totalSlots: dates.length * floors.length * SLOT_STARTS.length,
+      },
+    };
+  },
+
+  /** The schedule as a CSV or PDF file. No hostelId = every hostel. */
+  async exportSchedule(user: SessionUser, format: "csv" | "pdf", hostelId?: string): Promise<ExportFile> {
+    requireRole(user, ["Supervisor"]);
+    if (hostelId && !HOSTELS.some((h) => h.id === hostelId)) throw new ValidationError("Choose a valid hostel.");
+
+    const today = todayISO();
+    const dates = windowDates(today);
+    const bookings = await cleaningBookingRepo.listForRange(dates[0], dates[dates.length - 1], hostelId);
+
+    const rows: ScheduleRow[] = bookings.map((b) => ({
+      date: b.bookingDate,
+      hostelName: HOSTELS.find((h) => h.id === b.hostelId)?.name ?? b.hostelId,
+      floor: b.floor,
+      floorLabel: floorLabel(b.floor),
+      slotStart: b.slotStart,
+      slotLabel: slotLabel(b.slotStart),
+      roomNo: b.roomNo,
+    }));
+
+    const scope = hostelId ?? "all-hostels";
+    const filename = `cleaning-schedule-${scope}-${today}.${format}`;
+    const hostelName = hostelId ? HOSTELS.find((h) => h.id === hostelId)!.name : "All hostels";
+    return format === "csv"
+      ? exportService.scheduleCsv(rows, filename)
+      : exportService.schedulePdf(rows, dates, `Cleaning schedule (${hostelName})`, filename);
+  },
 };
+
+/** The days the supervisor sees: today and the next 4 (the furthest day a student can book). */
+function windowDates(today: string): string[] {
+  return Array.from({ length: BOOKING_MAX_DAYS_AHEAD + 1 }, (_, i) => addDays(today, i));
+}
