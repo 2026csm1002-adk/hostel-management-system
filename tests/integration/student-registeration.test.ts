@@ -7,6 +7,7 @@ import { ValidationError, ConflictError } from "@/server/errors";
 import { eq } from "drizzle-orm";
 
 describe("Student Registration & Profile Persistence", () => {
+  // Satluj has wings SE and SW, and its rooms start at 101 (101-199 is the ground floor).
   const testHostelId = "satluj";
 
   beforeEach(async () => {
@@ -39,7 +40,7 @@ describe("Student Registration & Profile Persistence", () => {
         fullName: "Aarav Sharma",
         googleEmail: "2026csm9001@iitrpr.ac.in",
         hostelId: testHostelId,
-        wing: "A",
+        wing: "SE",
         roomNo: "204",
         course: "MTech",
         batch: "2026",
@@ -59,7 +60,7 @@ describe("Student Registration & Profile Persistence", () => {
 
       expect(fetched).toBeDefined();
       expect(fetched.googleEmail).toBe(newStudent.googleEmail);
-      expect(fetched.wing).toBe("A");
+      expect(fetched.wing).toBe("SE");
     });
 
     it("should update existing student details when upsert is called with the same studentId", async () => {
@@ -68,7 +69,7 @@ describe("Student Registration & Profile Persistence", () => {
         fullName: "Bhavna Patel",
         googleEmail: "2026csm9002@iitrpr.ac.in",
         hostelId: testHostelId,
-        wing: "B",
+        wing: "SW",
         roomNo: "101",
         course: "BTech",
         batch: "2026",
@@ -80,12 +81,12 @@ describe("Student Registration & Profile Persistence", () => {
         ...initialStudent,
         fullName: "Bhavna Patel Updated",
         roomNo: "105",
-        wing: "C",
+        wing: "SE",
       });
 
       expect(updated.fullName).toBe("Bhavna Patel Updated");
       expect(updated.roomNo).toBe("105");
-      expect(updated.wing).toBe("C");
+      expect(updated.wing).toBe("SE");
 
       const rows = await db
         .select()
@@ -101,7 +102,7 @@ describe("Student Registration & Profile Persistence", () => {
         fullName: "Chirag Verma",
         googleEmail: "2026csm9003@iitrpr.ac.in",
         hostelId: testHostelId,
-        wing: "A",
+        wing: "SE",
         roomNo: "302",
         course: "PhD",
         batch: "2026",
@@ -122,7 +123,7 @@ describe("Student Registration & Profile Persistence", () => {
         fullName: "Divya Nair",
         rollNo: "2026CSM9004",
         hostelId: testHostelId,
-        wing: "a",
+        wing: "se", // lower case on purpose: the service stores it in upper case
         roomNo: "212",
         course: "MTech" as const,
         batch: "2026",
@@ -132,9 +133,25 @@ describe("Student Registration & Profile Persistence", () => {
 
       expect(result).toBeDefined();
       expect(result.studentId).toBe("2026CSM9004");
-      expect(result.wing).toBe("A");
+      expect(result.wing).toBe("SE");
       expect(result.floor).toBe(1);
       expect(result.email).toBe(email);
+    });
+
+    it("should reject a wing that does not belong to the hostel", async () => {
+      const payload = {
+        fullName: "Farhan Ali",
+        rollNo: "2026CSM9007",
+        hostelId: testHostelId,
+        wing: "BE", // a Beas wing, not a Satluj wing
+        roomNo: "212",
+        course: "BTech" as const,
+        batch: "2026",
+      };
+
+      await expect(
+        profileService.upsertProfile("2026csm9007@iitrpr.ac.in", payload)
+      ).rejects.toThrow(/SE, SW/);
     });
 
     it("should throw ConflictError if roll number is claimed by another email", async () => {
@@ -144,7 +161,7 @@ describe("Student Registration & Profile Persistence", () => {
         fullName: "Existing User",
         googleEmail: "2026csm9005@iitrpr.ac.in",
         hostelId: testHostelId,
-        wing: "A",
+        wing: "SE",
         roomNo: "101",
         course: "BTech",
         batch: "2026",
@@ -155,7 +172,7 @@ describe("Student Registration & Profile Persistence", () => {
         fullName: "Imposter User",
         rollNo: "2026CSM9005",
         hostelId: testHostelId,
-        wing: "A",
+        wing: "SE",
         roomNo: "102",
         course: "BTech" as const,
         batch: "2026",
@@ -172,7 +189,7 @@ describe("Student Registration & Profile Persistence", () => {
         fullName: "Esha Gupta",
         rollNo: "2026CSM9006",
         hostelId: testHostelId,
-        wing: "A",
+        wing: "SE", // valid wing, so the room number is what gets rejected
         roomNo: "INVALID_ROOM",
         course: "BTech" as const,
         batch: "2026",
