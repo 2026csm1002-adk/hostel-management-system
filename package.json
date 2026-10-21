@@ -21,6 +21,9 @@
   "dependencies": {
     "@libsql/client": "^0.18.0",
     "drizzle-orm": "^0.44.0",
+    "exceljs": "^4.4.0",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.9",
     "next": "^16.0.0",
     "next-auth": "beta",
     "react": "^19.0.0",

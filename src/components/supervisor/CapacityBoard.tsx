@@ -5,25 +5,66 @@ import { HOSTELS, MAX_ROOMS_PER_SLOT } from "@/lib/constants";
 import { apiFetch, errorMessage } from "@/lib/api-client";
 import { formatDateLabel } from "@/lib/dates";
 import { floorLabel } from "@/lib/room";
-import type { BoardCell, BoardDTO } from "@/types";
+import type { BoardCell, BoardDTO, BoardGroup } from "@/types/supervisor-board";
 
 type Loaded = { key: string; board: BoardDTO | null; error: string | null };
 
 const buttonClass =
   "rounded-[3px] border border-line-strong bg-white px-3 py-[7px] text-[12.5px] font-semibold hover:border-ink";
 
+// Booking-status colours, as in the prototype (green = space left, brick = full), in a darker shade.
+// Change a colour here once and the whole board follows.
+const TONE = {
+  empty: { box: "bg-white", text: "text-[#2C5A3B]" },
+  some: { box: "bg-[#CFE5D6]", text: "text-[#23492F]" },
+  full: { box: "bg-[#EBC9BF]", text: "text-[#7E2E1B]" },
+} as const;
+
+const cellBorder = "border-b border-r border-line";
+
 function Cell({ cell }: { cell: BoardCell }) {
   const n = cell.rooms.length;
   const full = n >= MAX_ROOMS_PER_SLOT;
-  const tone = full ? "bg-brick-soft" : n > 0 ? "bg-teal-soft" : "bg-paper";
+  const tone = full ? TONE.full : n > 0 ? TONE.some : TONE.empty;
   return (
-    <div className={`min-h-[64px] rounded-[3px] px-2.5 py-2 ${tone}`}>
-      <div className={"font-mono text-[11.5px] font-semibold " + (full ? "text-brick" : n > 0 ? "text-teal" : "text-ink-soft")}>
+    <div className={`${cellBorder} px-2 py-2.5 text-xs ${tone.box}`}>
+      <div className={`text-center font-mono font-semibold ${tone.text}`}>
         {n}/{MAX_ROOMS_PER_SLOT}
         {full && " FULL"}
       </div>
-      {n > 0 && <div className="mt-1 break-words font-mono text-xs">{cell.rooms.join(", ")}</div>}
+      {n > 0 && <div className="mt-0.5 break-words text-center text-[10.5px] text-ink">Rooms: {cell.rooms.join(", ")}</div>}
     </div>
+  );
+}
+
+function GroupGrid({ group, date }: { group: BoardGroup; date: string | undefined }) {
+  const day = group.days.find((d) => d.date === date) ?? group.days[0];
+  if (!day) return null;
+  return (
+    <section>
+      <h3 className="mb-2 font-display text-[15px] font-semibold">{group.label}</h3>
+      <div className="overflow-x-auto">
+        <div
+          className="grid min-w-[560px] overflow-hidden rounded-[3px] border-l border-t border-line"
+          style={{ gridTemplateColumns: `110px repeat(${group.floors.length}, minmax(90px, 1fr))` }}
+        >
+          <div className={`${cellBorder} bg-ink px-2 py-2.5 text-center font-mono text-xs font-semibold text-white`}>Slot</div>
+          {group.floors.map((f) => (
+            <div key={f} className={`${cellBorder} bg-ink px-2 py-2.5 text-center font-mono text-xs font-semibold text-white`}>
+              {floorLabel(f)}
+            </div>
+          ))}
+          {day.slots.map((slot) => (
+            <div key={slot.slotStart} className="contents">
+              <div className={`${cellBorder} flex items-center bg-paper px-2 py-2.5 font-mono text-xs font-semibold`}>{slot.label}</div>
+              {slot.cells.map((cell) => (
+                <Cell key={cell.floor} cell={cell} />
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -46,7 +87,7 @@ export function CapacityBoard() {
 
   const board = loaded?.board ?? null;
   const showing = loaded?.key === key; // false while the new answer is still on its way
-  const day = board?.days.find((d) => d.date === date) ?? board?.days[0];
+  const activeDate = board?.dates.find((d) => d === date) ?? board?.dates[0];
   const exportBase = "/api/cleaning/export?format=";
 
   return (
@@ -79,14 +120,14 @@ export function CapacityBoard() {
           <button type="button" onClick={() => setRefresh((n) => n + 1)} className={buttonClass}>
             Refresh
           </button>
-          <a href={`${exportBase}csv&hostelId=${hostelId}`} className={buttonClass}>
-            Download CSV
+          <a href={`${exportBase}xlsx&hostelId=${hostelId}`} className={buttonClass}>
+            Download Excel
           </a>
           <a href={`${exportBase}pdf&hostelId=${hostelId}`} className={buttonClass}>
             Download PDF
           </a>
-          <a href={`${exportBase}csv`} className={buttonClass}>
-            All hostels (CSV)
+          <a href={`${exportBase}xlsx`} className={buttonClass}>
+            All hostels (Excel)
           </a>
           <a href={`${exportBase}pdf`} className={buttonClass}>
             All hostels (PDF)
@@ -103,63 +144,45 @@ export function CapacityBoard() {
           {/* stats */}
           <div className="mb-4 grid gap-3 sm:grid-cols-3">
             {[
-              { n: board.stats.booked, label: `rooms booked, ${board.days.length} days` },
-              { n: board.stats.fullSlots, label: "floor-slots at full capacity" },
-              { n: board.floors.length, label: "floors shown" },
+              { n: board.stats.booked, label: `rooms booked, ${board.dates.length} days` },
+              { n: `${board.stats.fullSlots} / ${board.stats.totalSlots}`, label: "Slots at full capacity" },
+              { n: board.groups.length, label: board.groups.length === 1 ? "slot list shown" : "wings / slot lists shown" },
             ].map((s) => (
-              <div key={s.label} className="rounded-[3px] border border-line bg-white px-4 py-3">
-                <div className="font-display text-2xl font-semibold">{s.n}</div>
-                <div className="text-xs text-ink-soft">{s.label}</div>
+              <div key={s.label} className="rounded-[3px] border border-line bg-white px-4 py-3.5">
+                <div className="font-display text-[26px] font-bold">{s.n}</div>
+                <div className="mt-0.5 text-xs text-ink-soft">{s.label}</div>
               </div>
             ))}
           </div>
 
           {/* date tabs */}
           <div className="mb-3 flex flex-wrap gap-2">
-            {board.days.map((d) => (
+            {board.dates.map((d) => (
               <button
-                key={d.date}
+                key={d}
                 type="button"
-                aria-pressed={d.date === day?.date}
-                onClick={() => setDate(d.date)}
+                aria-pressed={d === activeDate}
+                onClick={() => setDate(d)}
                 className={
-                  "rounded-[3px] border px-3 py-1.5 text-[13px] font-semibold " +
-                  (d.date === day?.date ? "border-ink bg-ink text-white" : "border-line-strong bg-white hover:border-ink")
+                  "rounded-[3px] border px-3 py-1.5 font-mono text-[12.5px] font-semibold " +
+                  (d === activeDate ? "border-ink bg-ink text-white" : "border-line-strong bg-white hover:border-ink")
                 }
               >
-                {formatDateLabel(d.date)}
-                {d.date === board.today && " · Today"}
+                {formatDateLabel(d)}
+                {d === board.today && " · Today"}
               </button>
             ))}
           </div>
 
-          {/* grid: slots down, floors across */}
-          {day && (
-            <div className="overflow-x-auto rounded-[3px] border border-line bg-white p-3">
-              <div
-                className="grid min-w-[560px] gap-2"
-                style={{ gridTemplateColumns: `120px repeat(${board.floors.length}, minmax(110px, 1fr))` }}
-              >
-                <div />
-                {board.floors.map((f) => (
-                  <div key={f} className="px-1 pb-1 text-[12.5px] font-semibold">
-                    {floorLabel(f)}
-                  </div>
-                ))}
-                {day.slots.map((slot) => (
-                  <div key={slot.slotStart} className="contents">
-                    <div className="flex items-center px-1 font-mono text-[12.5px] font-semibold">{slot.label}</div>
-                    {slot.cells.map((cell) => (
-                      <Cell key={cell.floor} cell={cell} />
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* one section per wing (T6: one for all wings): slots down, floors across */}
+          <div className="space-y-6">
+            {board.groups.map((g) => (
+              <GroupGrid key={g.slotGroup} group={g} date={activeDate} />
+            ))}
+          </div>
           <p className="mt-3 text-xs text-ink-soft">
-            Each floor can take {MAX_ROOMS_PER_SLOT} rooms per one-hour slot. The days shown are today and the next
-            four, the furthest day a student can book.
+            Each wing has its own slots (T6: all wings share one list), and each floor can take {MAX_ROOMS_PER_SLOT} rooms
+            per one-hour slot. The days shown are today and the next {board.dates.length - 1} days, the furthest day a student can book.
           </p>
         </div>
       )}

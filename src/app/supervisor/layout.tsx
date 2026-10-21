@@ -8,7 +8,7 @@ export default async function SupervisorLayout({ children }: { children: React.R
     <RoleLayout
       email={user.email!}
       roleLabel="Cleaning Supervisor"
-      accent="green"
+      accent="indigo"
       title="Cleaning schedule"
       subtitle="Which rooms are booked, on which floor and in which slot, across all hostels."
       chipText="Supervisor · All hostels"
