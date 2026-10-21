@@ -9,16 +9,16 @@ describe("Unit: dates", () => {
     expect(daysBetween("2026-10-30", "2026-11-02")).toBe(3);
     expect(daysBetween("2026-10-16", "2026-10-14")).toBe(-2);
   });
-  it("booking window is 2 to 4 days ahead", () => {
+  it("booking window is the next 3 days, starting tomorrow", () => {
     const today = "2026-10-14";
-    expect(isWithinBookingWindow("2026-10-14", today)).toBe(false);
-    expect(isWithinBookingWindow("2026-10-15", today)).toBe(false);
-    expect(isWithinBookingWindow("2026-10-16", today)).toBe(true);
-    expect(isWithinBookingWindow("2026-10-18", today)).toBe(true);
-    expect(isWithinBookingWindow("2026-10-19", today)).toBe(false);
+    expect(isWithinBookingWindow("2026-10-13", today)).toBe(false);
+    expect(isWithinBookingWindow("2026-10-14", today)).toBe(false); // today itself
+    expect(isWithinBookingWindow("2026-10-15", today)).toBe(true);
+    expect(isWithinBookingWindow("2026-10-17", today)).toBe(true);
+    expect(isWithinBookingWindow("2026-10-18", today)).toBe(false);
   });
   it("lists the three bookable dates", () => {
-    expect(bookableDates("2026-10-30")).toEqual(["2026-11-01", "2026-11-02", "2026-11-03"]);
+    expect(bookableDates("2026-10-30")).toEqual(["2026-10-31", "2026-11-01", "2026-11-02"]);
   });
   it("validates date strings", () => {
     expect(isValidISODate("2026-02-30")).toBe(false);

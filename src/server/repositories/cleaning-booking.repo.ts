@@ -6,11 +6,22 @@ import { memory, type CleaningBookingRow } from "@/server/db/memory-store";
 
 export type NewBooking = Omit<CleaningBookingRow, "bookingId" | "seat" | "status">;
 
+/** Why a booking was not made: the slot is full, or the student already holds a slot that day. */
+export type InsertResult =
+  | { ok: true; row: CleaningBookingRow }
+  | { ok: false; reason: "slot-full" | "student-has-booking" };
+
 export const cleaningBookingRepo = {
-  /** All bookings of one floor on one date (every slot). */
-  async listForDay(hostelId: string, floor: number, date: string): Promise<CleaningBookingRow[]> {
+  /**
+   * All bookings of one floor of one slot group on one date (every slot).
+   * The slot group is the wing (SE, SW, ...) or "ALL" for T6, see slotGroupOf in hostels.ts.
+   */
+  async listForDay(hostelId: string, slotGroup: string, floor: number, date: string): Promise<CleaningBookingRow[]> {
     return memory.cleaningBookings
-      .filter((b) => b.hostelId === hostelId && b.floor === floor && b.bookingDate === date)
+      .filter(
+        (b) =>
+          b.hostelId === hostelId && b.slotGroup === slotGroup && b.floor === floor && b.bookingDate === date,
+      )
       .map((b) => ({ ...b }));
   },
 
@@ -31,20 +42,32 @@ export const cleaningBookingRepo = {
     return row && { ...row };
   },
 
+  /** The booking this student already holds on this date (a student may hold only one per day). */
+  async findByStudentAndDate(studentId: string, date: string): Promise<CleaningBookingRow | undefined> {
+    const row = memory.cleaningBookings.find((b) => b.studentId === studentId && b.bookingDate === date);
+    return row && { ...row };
+  },
+
   /**
-   * Takes the lowest free seat (1..3) and inserts. Returns null when all seats are taken.
+   * One booking per student per day, then takes the lowest free seat (1..3) and inserts.
+   * Fails with "student-has-booking" or "slot-full".
    * The in-memory version has no `await` between the check and the push, so two
    * requests can never take the same seat.
    * DB SWAP: do this inside a transaction and rely on
-   * UNIQUE(hostel_id, floor, booking_date, slot_start, seat); if the insert hits
-   * the UNIQUE rule, try the next seat, and return null when none is left.
+   * UNIQUE(hostel_id, slot_group, floor, booking_date, slot_start, seat); if the insert hits
+   * that rule, try the next seat, and report "slot-full" when none is left. Also add
+   * UNIQUE(student_id, booking_date): a hit on it means "student-has-booking".
    */
-  async insertWithLowestFreeSeat(input: NewBooking): Promise<CleaningBookingRow | null> {
+  async insertWithLowestFreeSeat(input: NewBooking): Promise<InsertResult> {
+    if (memory.cleaningBookings.some((b) => b.studentId === input.studentId && b.bookingDate === input.bookingDate)) {
+      return { ok: false, reason: "student-has-booking" };
+    }
     const taken = new Set(
       memory.cleaningBookings
         .filter(
           (b) =>
             b.hostelId === input.hostelId &&
+            b.slotGroup === input.slotGroup &&
             b.floor === input.floor &&
             b.bookingDate === input.bookingDate &&
             b.slotStart === input.slotStart,
@@ -58,27 +81,11 @@ export const cleaningBookingRepo = {
         break;
       }
     }
-    if (seat === 0) return null;
+    if (seat === 0) return { ok: false, reason: "slot-full" };
 
     const row: CleaningBookingRow = { ...input, bookingId: randomUUID(), seat, status: "Confirmed" };
     memory.cleaningBookings.push(row);
-    return { ...row };
-  },
-
-  /**
-   * Bookings from `fromDate` to `toDate` (both included), for one hostel or all hostels.
-   * DB SWAP: select().from(cleaningBooking).where(and(gte(bookingDate, from), lte(bookingDate, to),
-   *          hostelId ? eq(hostelId, ...) : undefined))
-   */
-  async listForRange(fromDate: string, toDate: string, hostelId?: string): Promise<CleaningBookingRow[]> {
-    return memory.cleaningBookings
-      .filter(
-        (b) =>
-          b.bookingDate >= fromDate &&
-          b.bookingDate <= toDate &&
-          (hostelId === undefined || b.hostelId === hostelId),
-      )
-      .map((b) => ({ ...b }));
+    return { ok: true, row: { ...row } };
   },
 
   async listByStudent(studentId: string): Promise<CleaningBookingRow[]> {

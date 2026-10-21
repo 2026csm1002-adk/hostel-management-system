@@ -47,13 +47,13 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((parse(to) - parse(from)) / DAY_MS);
 }
 
-/** True when `date` is 2 to 4 days after `today`. */
+/** True when `date` is inside the booking window (BOOKING_MIN_DAYS_AHEAD to BOOKING_MAX_DAYS_AHEAD days after `today`). */
 export function isWithinBookingWindow(date: string, today: string = todayISO()): boolean {
   const diff = daysBetween(today, date);
   return diff >= BOOKING_MIN_DAYS_AHEAD && diff <= BOOKING_MAX_DAYS_AHEAD;
 }
 
-/** The dates a student may book right now (today + 2, +3, +4). */
+/** The dates a student may book right now (today + 1, +2, +3). */
 export function bookableDates(today: string = todayISO()): string[] {
   const out: string[] = [];
   for (let i = BOOKING_MIN_DAYS_AHEAD; i <= BOOKING_MAX_DAYS_AHEAD; i++) out.push(addDays(today, i));

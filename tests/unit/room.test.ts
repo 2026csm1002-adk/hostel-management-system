@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { HOSTELS } from "@/lib/constants";
-import { getHostel, wingError, wingsOf } from "@/lib/hostels";
+import { floorCountOf, getHostel, slotGroupOf, wingError, wingsOf } from "@/lib/hostels";
 import { floorFromRoom, floorLabel, roomError, roomHint } from "@/lib/room";
 
 describe("Unit: floor from room number, hostels whose rooms start at 101", () => {
@@ -92,5 +92,46 @@ describe("Unit: wings of each hostel", () => {
       expect(getHostel(h.id)!.wings.length > 0).toBe(true);
       expect([1, 100].includes(h.roomsStartAt)).toBe(true);
     }
+  });
+});
+
+describe("Unit: number of floors of each wing", () => {
+  it("Brahmaputra North has 6 floors, South has 5, each T6 wing has 2, all others 4", () => {
+    expect(floorCountOf("brahmaputra", "BHN")).toBe(6);
+    expect(floorCountOf("brahmaputra", "bhs")).toBe(5);
+    for (const w of ["C", "D", "E", "F", "G"]) expect(floorCountOf("t6", w)).toBe(2);
+    expect(floorCountOf("satluj", "SE")).toBe(4);
+    expect(floorCountOf("beas", "BW")).toBe(4);
+    expect(floorCountOf("chenab", "CE")).toBe(4);
+    expect(floorCountOf("raavi", "RC")).toBe(4);
+    expect(floorCountOf("chintpurni", "CH")).toBe(4);
+  });
+  it("a room above the top floor of its wing is rejected", () => {
+    // Satluj (rooms from 101): 4xx is the 3rd floor, the top one; 5xx would be a 4th floor
+    expect(roomError("satluj", "499", "SE")).toBeNull();
+    expect(roomError("satluj", "505", "SE")).toContain("only 4 floors");
+    // Brahmaputra (rooms from 001): floor = room / 100, North 0-5, South 0-4
+    expect(roomError("brahmaputra", "512", "BHN")).toBeNull();
+    expect(roomError("brahmaputra", "612", "BHN")).toContain("only 6 floors");
+    expect(roomError("brahmaputra", "412", "BHS")).toBeNull();
+    expect(roomError("brahmaputra", "512", "BHS")).toContain("only 5 floors");
+    // T6 (rooms from 101): floors 0-1
+    expect(roomError("t6", "210", "D")).toBeNull();
+    expect(roomError("t6", "310", "D")).toContain("only 2 floors");
+  });
+  it("without a wing only the numbering is checked", () => {
+    expect(roomError("satluj", "905")).toBeNull();
+  });
+});
+
+describe("Unit: which wings share cleaning slots", () => {
+  it("every hostel except T6 has separate slots for each wing", () => {
+    expect(slotGroupOf("satluj", "se")).toBe("SE");
+    expect(slotGroupOf("satluj", "SW")).toBe("SW");
+    expect(slotGroupOf("raavi", "RC")).toBe("RC");
+    expect(slotGroupOf("brahmaputra", "BHN")).not.toBe(slotGroupOf("brahmaputra", "BHS"));
+  });
+  it("all T6 wings share one slot list", () => {
+    expect(slotGroupOf("t6", "C")).toBe(slotGroupOf("t6", "G"));
   });
 });

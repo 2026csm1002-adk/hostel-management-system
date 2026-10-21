@@ -54,7 +54,8 @@ export function SlotPicker({ profile, onBooked }: { profile: StudentProfile; onB
     <div>
       <p className="mb-3 text-[13px] text-ink-soft">
         Booking for room <strong className="text-ink">{profile.roomNo}</strong> on the{" "}
-        <strong className="text-ink">{profile.floorLabel}</strong> of {profile.hostelName}.
+        <strong className="text-ink">{profile.floorLabel}</strong> of {profile.hostelName}, wing{" "}
+        <strong className="text-ink">{profile.wing}</strong>.
       </p>
 
       <div className="mb-3 flex flex-wrap gap-2">
@@ -86,7 +87,7 @@ export function SlotPicker({ profile, onBooked }: { profile: StudentProfile; onB
               <div key={i} className="h-[58px] animate-pulse rounded-[3px] border border-line bg-paper" />
             ))
           : slots.map((s) => {
-              const disabled = s.status === "Full" || s.bookedByMe;
+              const disabled = s.status === "Full" || s.bookedByMe || s.dayBooked;
               const selected = slotStart === s.slotStart;
               return (
                 <button
@@ -106,7 +107,11 @@ export function SlotPicker({ profile, onBooked }: { profile: StudentProfile; onB
                 >
                   <span className="block font-mono text-[13px] font-semibold">{s.label}</span>
                   <span className={"text-xs " + (s.status === "Full" ? "text-brick" : "text-ink-soft")}>
-                    {s.bookedByMe ? "Booked by your room" : `${s.filled}/${s.capacity} ${s.status}`}
+                    {s.bookedByMe
+                      ? "Booked by your room"
+                      : s.dayBooked
+                        ? "You have a slot this day"
+                        : `${s.filled}/${s.capacity} ${s.status}`}
                   </span>
                 </button>
               );
@@ -129,8 +134,8 @@ export function SlotPicker({ profile, onBooked }: { profile: StudentProfile; onB
         )}
       </div>
       <p className="mt-3 text-xs text-ink-soft">
-        Slots run 9:00 AM–1:00 PM and 2:00–4:00 PM. Each floor allows a maximum of 3 rooms per one-hour slot, and
-        bookings must be made 2–4 days ahead. Your room number and floor come from your profile.
+        Slots run 9:00 AM–1:00 PM and 2:00–4:00 PM. Each floor of a wing allows a maximum of 3 rooms per one-hour slot (all T6
+        wings share the same slots), and you can book only for the next 3 days, one slot per day. Your room, wing and floor come from your profile.
       </p>
     </div>
   );

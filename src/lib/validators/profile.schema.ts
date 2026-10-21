@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { COURSES } from "@/lib/constants";
 import { getHostel, wingError } from "@/lib/hostels";
+import { MOBILE_ERROR, normalizeMobile } from "@/lib/mobile";
 import { roomError } from "@/lib/room";
 
+// Every field below is required: a profile is saved only when all of them are filled.
 // Shape checks, plus the two rules that depend on the hostel (its wings and its room numbering).
 // "Roll no already taken" is a service rule.
 export const profileSchema = z
@@ -12,6 +14,12 @@ export const profileSchema = z
     wing: z.string().trim().min(1, "Choose your wing").max(10, "Wing is too long"),
     roomNo: z.string().trim().min(1, "Enter your room number").max(10, "Room number is too long"),
     course: z.enum(COURSES, { error: "Choose your course" }),
+    mobileNo: z
+      .string()
+      .trim()
+      .min(1, "Enter your mobile number")
+      .refine((v) => normalizeMobile(v) !== null, MOBILE_ERROR)
+      .transform((v) => normalizeMobile(v) as string),
     // Normally read from the institute email. Only needed when the email does not contain them,
     // and only used on the very first save.
     rollNo: z
@@ -29,7 +37,7 @@ export const profileSchema = z
     if (!getHostel(d.hostelId)) return; // already reported on the hostel field
     const wing = wingError(d.hostelId, d.wing);
     if (wing) ctx.addIssue({ code: "custom", message: wing, path: ["wing"] });
-    const room = roomError(d.hostelId, d.roomNo);
+    const room = roomError(d.hostelId, d.roomNo, wing ? undefined : d.wing);
     if (room) ctx.addIssue({ code: "custom", message: room, path: ["roomNo"] });
   });
 

@@ -2,8 +2,8 @@
 // Change a rule here once and the whole app follows.
 
 export const MAX_ROOMS_PER_SLOT = 3;
-export const BOOKING_MIN_DAYS_AHEAD = 2;
-export const BOOKING_MAX_DAYS_AHEAD = 4;
+export const BOOKING_MIN_DAYS_AHEAD = 1; // tomorrow
+export const BOOKING_MAX_DAYS_AHEAD = 3; // the 3rd day from today
 export const REREGISTER_AFTER_DAYS = 7;
 
 // Calendar-day maths (bookings, "7 days old") is done in this time zone.

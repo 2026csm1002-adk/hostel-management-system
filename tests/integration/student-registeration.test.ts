@@ -127,6 +127,7 @@ describe("Student Registration & Profile Persistence", () => {
         roomNo: "212",
         course: "MTech" as const,
         batch: "2026",
+        mobileNo: "9876543210",
       };
 
       const result = await profileService.upsertProfile(email, payload);
@@ -147,6 +148,7 @@ describe("Student Registration & Profile Persistence", () => {
         roomNo: "212",
         course: "BTech" as const,
         batch: "2026",
+        mobileNo: "9876543210",
       };
 
       await expect(
@@ -176,6 +178,7 @@ describe("Student Registration & Profile Persistence", () => {
         roomNo: "102",
         course: "BTech" as const,
         batch: "2026",
+        mobileNo: "9876543210",
       };
 
       await expect(
@@ -193,11 +196,29 @@ describe("Student Registration & Profile Persistence", () => {
         roomNo: "INVALID_ROOM",
         course: "BTech" as const,
         batch: "2026",
+        mobileNo: "9876543210",
       };
 
       await expect(
         profileService.upsertProfile(email, invalidPayload)
       ).rejects.toThrow(ValidationError);
+    });
+
+    it("should not save anything when the mobile number is missing", async () => {
+      const email = "2026csm9008@iitrpr.ac.in";
+      const payload = {
+        fullName: "Gauri Rao",
+        rollNo: "2026CSM9008",
+        hostelId: testHostelId,
+        wing: "SE",
+        roomNo: "212",
+        course: "BTech" as const,
+        batch: "2026",
+        mobileNo: "",
+      };
+
+      await expect(profileService.upsertProfile(email, payload)).rejects.toThrow(ValidationError);
+      expect(await studentRepo.findByEmail(email)).toBeFalsy(); // nothing was saved
     });
 
     it("should require a profile before allowing service requests", async () => {

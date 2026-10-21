@@ -1,15 +1,17 @@
 import { HOSTELS } from "@/lib/constants";
 import { wingError } from "@/lib/hostels";
+import { MOBILE_ERROR, normalizeMobile } from "@/lib/mobile";
 import { floorFromRoom, floorLabel, roomError } from "@/lib/room";
 import { parseStudentEmail } from "@/lib/student-identity";
 import type { ProfileInput } from "@/lib/validators/profile.schema";
 import type { StudentRow } from "@/server/db/memory-store";
 import { ConflictError, ValidationError } from "@/server/errors";
+import { mobileRepo } from "@/server/repositories/mobile.repo";
 import { studentRepo } from "@/server/repositories/student.repo";
 import type { StudentProfile } from "@/types";
 
 /** Database row -> what the browser receives (adds hostel name and the floor). */
-export function toProfile(row: StudentRow): StudentProfile {
+export function toProfile(row: StudentRow, mobileNo: string | null): StudentProfile {
   const floor = floorFromRoom(row.roomNo, row.hostelId) ?? 0;
   return {
     studentId: row.studentId,
@@ -23,6 +25,7 @@ export function toProfile(row: StudentRow): StudentProfile {
     floorLabel: floorLabel(floor),
     course: row.course as StudentProfile["course"],
     batch: row.batch,
+    mobileNo: mobileNo ?? "",
   };
 }
 
@@ -30,17 +33,27 @@ export const profileService = {
   /** null while the student has not saved a profile yet. */
   async getProfile(email: string): Promise<StudentProfile | null> {
     const row = await studentRepo.findByEmail(email.trim().toLowerCase());
-    return row ? toProfile(row) : null;
+    return row ? toProfile(row, await mobileRepo.get(row.studentId)) : null;
   },
 
   /** Every request feature (cleaning, complaint, swap) needs a saved profile. */
   async requireProfile(email: string): Promise<StudentRow> {
     const row = await studentRepo.findByEmail(email.trim().toLowerCase());
-    if (!row) throw new ValidationError("Please complete your profile first.");
+    // A profile without a mobile number is an old, incomplete one: it must be completed first.
+    if (!row || !(await mobileRepo.get(row.studentId))) {
+      throw new ValidationError("Please complete your profile first.");
+    }
     return row;
   },
 
   async upsertProfile(email: string, data: ProfileInput): Promise<StudentProfile> {
+    // Nothing is saved until every detail is filled (the form checks this too, this service is also called without it).
+    if (!data.fullName?.trim()) throw new ValidationError("Enter your full name.");
+    if (!data.course) throw new ValidationError("Choose your course.");
+    if (!data.mobileNo?.trim()) throw new ValidationError("Enter your mobile number.");
+    const mobileNo = normalizeMobile(data.mobileNo);
+    if (!mobileNo) throw new ValidationError(`${MOBILE_ERROR}.`);
+
     const identity = parseStudentEmail(email);
     const existing = await studentRepo.findByEmail(identity.email);
 
@@ -54,7 +67,7 @@ export const profileService = {
       throw new ConflictError("This roll number already belongs to another profile.");
     }
     // The same checks as the form validation, because this service is also called without it.
-    const problem = wingError(data.hostelId, data.wing) ?? roomError(data.hostelId, data.roomNo);
+    const problem = wingError(data.hostelId, data.wing) ?? roomError(data.hostelId, data.roomNo, data.wing);
     if (problem) throw new ValidationError(problem);
 
     const saved = await studentRepo.upsert({
@@ -67,6 +80,8 @@ export const profileService = {
       course: data.course,
       batch,
     });
-    return toProfile(saved);
+    // Saved only after the profile itself was saved.
+    await mobileRepo.set(saved.studentId, mobileNo);
+    return toProfile(saved, mobileNo);
   },
 };

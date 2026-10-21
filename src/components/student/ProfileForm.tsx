@@ -4,6 +4,7 @@ import { useState } from "react";
 import { COURSES, HOSTELS } from "@/lib/constants";
 import { apiFetch, errorMessage } from "@/lib/api-client";
 import { wingsOf } from "@/lib/hostels";
+import { normalizeMobile } from "@/lib/mobile";
 import { floorFromRoom, floorLabel } from "@/lib/room";
 import type { StudentProfile } from "@/types";
 import { useProfile } from "./useProfile";
@@ -57,6 +58,7 @@ function ProfileFields({
   const [course, setCourse] = useState<string>(profile?.course ?? "");
   const [rollNo, setRollNo] = useState(identity.rollNo ?? "");
   const [batch, setBatch] = useState(identity.batch ?? "");
+  const [mobileNo, setMobileNo] = useState(profile?.mobileNo ?? "");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -74,7 +76,19 @@ function ProfileFields({
     setWing((current) => (options.includes(current) ? current : options.length === 1 ? options[0] : ""));
   }
 
+  // The profile is saved only when every detail is filled in.
+  const missing = [
+    rollEditable && !rollNo.trim() && "Roll No",
+    batchEditable && !batch.trim() && "Batch",
+    !hostelId && "Hostel",
+    !wing && "Wing",
+    !roomNo.trim() && "Room number",
+    !course && "Course",
+    !mobileNo.trim() ? "Mobile number" : normalizeMobile(mobileNo) === null && "A valid 10-digit mobile number",
+  ].filter((m): m is string => typeof m === "string");
+
   async function save() {
+    if (missing.length > 0) return;
     setBusy(true);
     setMessage(null);
     try {
@@ -87,6 +101,7 @@ function ProfileFields({
           wing,
           roomNo,
           course,
+          mobileNo,
           ...(rollEditable ? { rollNo } : {}),
           ...(batchEditable ? { batch } : {}),
         }),
@@ -173,17 +188,30 @@ function ProfileFields({
             ))}
           </select>
         </Field>
+        <Field label="Mobile number">
+          <input
+            className={inputClass}
+            type="tel"
+            inputMode="numeric"
+            value={mobileNo}
+            placeholder="10-digit mobile number"
+            onChange={(e) => setMobileNo(e.target.value)}
+          />
+        </Field>
       </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <button
           type="button"
           onClick={save}
-          disabled={busy}
+          disabled={busy || missing.length > 0}
           className="rounded-[3px] bg-teal px-[18px] py-2.5 font-display text-[13.5px] font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {busy ? "Saving…" : "Save profile"}
         </button>
+        {missing.length > 0 && (
+          <span className="text-[12.5px] text-ink-soft">Fill in all the details to save: {missing.join(", ")}.</span>
+        )}
         {message && (
           <span role="status" className={"text-[12.5px] " + (message.ok ? "text-green" : "text-brick")}>
             {message.text}

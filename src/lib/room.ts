@@ -9,7 +9,7 @@
 //
 // Room numbers such as "A-112" are allowed: the LAST run of digits is used (112).
 
-import { getHostel } from "@/lib/hostels";
+import { floorCountOf, getHostel } from "@/lib/hostels";
 
 /** Returns the floor number (0 = ground floor), or null when it cannot be worked out. */
 export function floorFromRoom(roomNo: string | null | undefined, hostelId: string | null | undefined): number | null {
@@ -31,12 +31,25 @@ export function roomHint(hostelId: string | null | undefined): string {
     : `Rooms in ${hostel.name} start at 101: 101\u2013199 is the ground floor, 201\u2013299 the 1st floor.`;
 }
 
-/** null when the room number is usable for this hostel, otherwise a message for the student. */
-export function roomError(hostelId: string, roomNo: string): string | null {
-  if (floorFromRoom(roomNo, hostelId) !== null) return null;
-  const hostel = getHostel(hostelId);
-  if (!hostel) return "Choose your hostel.";
-  return `Enter a valid room number for ${hostel.name}. ${roomHint(hostelId)}`;
+/**
+ * null when the room number is usable for this hostel (and wing, when given), otherwise a message
+ * for the student. With a wing, the room must also be on a floor that the wing has.
+ */
+export function roomError(hostelId: string, roomNo: string, wing?: string): string | null {
+  const floor = floorFromRoom(roomNo, hostelId);
+  if (floor === null) {
+    const hostel = getHostel(hostelId);
+    if (!hostel) return "Choose your hostel.";
+    return `Enter a valid room number for ${hostel.name}. ${roomHint(hostelId)}`;
+  }
+  if (wing) {
+    const count = floorCountOf(hostelId, wing);
+    if (floor >= count) {
+      const w = wing.trim().toUpperCase();
+      return `Room ${roomNo.trim()} is on the ${floorLabel(floor).toLowerCase()}, but wing ${w} has only ${count} floors (ground floor to ${floorLabel(count - 1).toLowerCase()}).`;
+    }
+  }
+  return null;
 }
 
 /** 0 -> "Ground floor", 1 -> "1st floor", 2 -> "2nd floor", 11 -> "11th floor", null -> "\u2014" */
