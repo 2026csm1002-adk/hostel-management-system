@@ -104,7 +104,7 @@ describe("Unit: number of floors of each wing", () => {
     expect(floorCountOf("beas", "BW")).toBe(4);
     expect(floorCountOf("chenab", "CE")).toBe(4);
     expect(floorCountOf("raavi", "RC")).toBe(4);
-    expect(floorCountOf("chintpurni", "CH")).toBe(4);
+    expect(floorCountOf("chintpurni", "CH")).toBe(3);
   });
   it("a room above the top floor of its wing is rejected", () => {
     // Satluj (rooms from 101): 4xx is the 3rd floor, the top one; 5xx would be a 4th floor

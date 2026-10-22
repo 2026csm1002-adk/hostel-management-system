@@ -17,6 +17,7 @@ const DEFAULT_FLOORS = 4;
 function floorsOfWing(hostelId: string, wing: string): number {
   const w = wing.trim().toUpperCase();
   if (hostelId === "t6") return 2;
+  if (hostelId === "chintpurni") return 3;
   if (hostelId === "brahmaputra") {
     // North (BHN) 6 floors, South (BHS) 5 floors
     if (w.includes("N") && !w.includes("S")) return 6;

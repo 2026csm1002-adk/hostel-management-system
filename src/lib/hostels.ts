@@ -26,6 +26,7 @@ const DEFAULT_FLOORS = 4;
 const FLOOR_COUNTS: Record<string, number | Record<string, number>> = {
   brahmaputra: { BHN: 6, BHS: 5 },
   t6: 2,
+  chintpurni: 3,
 };
 
 /** Number of floors (ground included) of this wing. */
