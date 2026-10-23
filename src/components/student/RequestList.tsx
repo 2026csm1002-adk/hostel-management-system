@@ -5,7 +5,8 @@ import { COMPLAINT_CATEGORIES } from "@/lib/constants";
 import { apiFetch, errorMessage } from "@/lib/api-client";
 import { formatDateLabel } from "@/lib/dates";
 import type { CleaningBookingDTO, ComplaintDTO, SwapDTO } from "@/types";
-import { StatusChip } from "./StatusChip";
+import { StatusChip } from "@/components/shared/StatusChip";
+import { shortId } from "@/lib/ids";
 
 type Row = {
   id: string;
@@ -21,7 +22,6 @@ type Row = {
   reregisterId?: string;
 };
 
-const shortId = (id: string) => id.slice(0, 8).toUpperCase();
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 
 function buildRows(c: CleaningBookingDTO[], q: ComplaintDTO[], s: SwapDTO[]): Row[] {
@@ -31,7 +31,7 @@ function buildRows(c: CleaningBookingDTO[], q: ComplaintDTO[], s: SwapDTO[]): Ro
       kind: "cleaning",
       typeLabel: "Room cleaning",
       title: `${b.floorLabel} · ${b.label} · ${formatDateLabel(b.date)}`,
-      meta: `Room ${b.roomNo} · seat ${b.seat}`,
+      meta: `Wing ${b.wing} · Room ${b.roomNo} · seat ${b.seat}`,
       status: b.status,
       open: b.status === "Confirmed",
       sortKey: `${b.date}T${b.slotStart}`,

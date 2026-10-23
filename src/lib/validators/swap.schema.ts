@@ -9,7 +9,19 @@ export const submitSwapSchema = z.object({
     .max(SWAP_REASON_MAX_CHARS, `Keep the reason under ${SWAP_REASON_MAX_CHARS} characters`),
 });
 
-// Warden / caretaker schemas are added with their screens:
-//   decisionSchema (Accept/Reject/Waiting, comment required unless Accept), assignRoomSchema (room)
+// Warden: Accept / Reject / Waiting. Reject and Waiting need a comment, because the student
+// sees it and needs to know why.
+export const decisionSchema = z
+  .object({
+    decision: z.enum(["Accept", "Reject", "Waiting"], { error: "Choose Accept, Reject or Waiting" }),
+    comment: z.string().trim().max(500, "Keep the comment under 500 characters").optional(),
+  })
+  .refine((d) => d.decision === "Accept" || (d.comment !== undefined && d.comment.length > 0), {
+    message: "Please add a comment for Reject or Waiting.",
+    path: ["comment"],
+  });
+
+// assignRoomSchema (caretaker) is added with the caretaker screens.
 
 export type SubmitSwapInput = z.infer<typeof submitSwapSchema>;
+export type DecisionInput = z.infer<typeof decisionSchema>;

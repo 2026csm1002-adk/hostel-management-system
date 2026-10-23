@@ -12,3 +12,12 @@ export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
 export function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : "Something went wrong. Please try again.";
 }
+
+/** POST / PATCH a JSON body (or no body) and return the parsed answer. */
+export function sendJson<T>(url: string, body?: unknown, method: "POST" | "PATCH" = "POST"): Promise<T> {
+  return apiFetch<T>(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
