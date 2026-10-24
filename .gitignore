@@ -4,6 +4,8 @@ out/
 coverage/
 *.tsbuildinfo
 next-env.d.ts
+./data
+package-lock.json
 
 # secrets
 .env
