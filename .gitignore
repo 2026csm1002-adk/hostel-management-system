@@ -6,7 +6,7 @@ node_modules/
 out/
 next-env.d.ts
 ./data
-package-lock.json
+
 
 # Testing and coverage
 coverage/
