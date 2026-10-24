@@ -16,8 +16,6 @@ coverage/
 # TypeScript
 *.tsbuildinfo
 
-# Package lock file
-package-lock.json
 
 # Secrets
 .env
