@@ -10,17 +10,20 @@ const exportQuerySchema = z.object({
     .string()
     .refine((id) => HOSTELS.some((h) => h.id === id), "Choose a valid hostel")
     .optional(),
+  // the day selected on the board (YYYY-MM-DD); the service checks it is one of the board's days
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose a valid day").optional(),
 });
 
-// GET /api/cleaning/export?format=xlsx|pdf&hostelId=satluj   (Supervisor only; no hostelId = all hostels)
+// GET /api/cleaning/export?format=xlsx|pdf&hostelId=satluj&date=2026-10-22   (Supervisor only; no hostelId = all hostels; date = the selected day, optional)
 export function GET(req: Request) {
   return respondFile(async () => {
     const user = await requireUser(["Supervisor"]);
     const { searchParams } = new URL(req.url);
-    const { format, hostelId } = exportQuerySchema.parse({
+    const { format, hostelId, date } = exportQuerySchema.parse({
       format: searchParams.get("format"),
       hostelId: searchParams.get("hostelId") ?? undefined,
+      date: searchParams.get("date") ?? undefined,
     });
-    return supervisorService.exportSchedule(user, format, hostelId);
+    return supervisorService.exportSchedule(user, format, hostelId, date);
   });
 }

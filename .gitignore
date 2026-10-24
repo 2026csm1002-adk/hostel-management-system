@@ -5,8 +5,10 @@ node_modules/
 .next/
 out/
 next-env.d.ts
-./data
 
+# Local data
+/data/
+.data/
 
 # Testing and coverage
 coverage/
@@ -14,10 +16,7 @@ coverage/
 # TypeScript
 *.tsbuildinfo
 
-# Local data
-/data/
-
-# Package lock file (ignore only if intentional)
+# Package lock file
 package-lock.json
 
 # Secrets

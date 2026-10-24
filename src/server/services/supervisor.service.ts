@@ -97,12 +97,19 @@ export const supervisorService = {
    * The schedule as an Excel file (one sheet per wing; T6 one sheet for all wings) or a PDF.
    * No hostelId = every hostel.
    */
-  async exportSchedule(user: SessionUser, format: "xlsx" | "pdf", hostelId?: string): Promise<ExportFile> {
+  async exportSchedule(
+    user: SessionUser,
+    format: "xlsx" | "pdf",
+    hostelId?: string,
+    date?: string, // the day the supervisor selected; without it the whole window is exported
+  ): Promise<ExportFile> {
     requireRole(user, ["Supervisor"]);
     if (hostelId && !HOSTELS.some((h) => h.id === hostelId)) throw new ValidationError("Choose a valid hostel.");
 
     const today = todayISO();
-    const dates = windowDates(today);
+    const window = windowDates(today);
+    if (date && !window.includes(date)) throw new ValidationError("Choose a day shown on the board.");
+    const dates = date ? [date] : window; // only the selected day, or all days when none is given
     const bookings = await supervisorBoardRepo.listForRange(dates[0], dates[dates.length - 1], hostelId);
     const placed = await place(bookings);
 
@@ -129,7 +136,7 @@ export const supervisorService = {
     }
 
     const scope = hostelId ?? "all-hostels";
-    const filename = `cleaning-schedule-${scope}-${today}.${format}`;
+    const filename = `cleaning-schedule-${scope}-${date ?? today}.${format}`;
     const hostelName = hostelId ? HOSTELS.find((h) => h.id === hostelId)!.name : "All hostels";
     return format === "xlsx"
       ? wingExportService.scheduleXlsx(sheets, filename)

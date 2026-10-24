@@ -88,6 +88,8 @@ export function CapacityBoard() {
   const board = loaded?.board ?? null;
   const showing = loaded?.key === key; // false while the new answer is still on its way
   const activeDate = board?.dates.find((d) => d === date) ?? board?.dates[0];
+  // downloads cover only the day selected in the tabs below
+  const dayParam = activeDate ? `&date=${activeDate}` : "";
   const exportBase = "/api/cleaning/export?format=";
 
   return (
@@ -120,16 +122,16 @@ export function CapacityBoard() {
           <button type="button" onClick={() => setRefresh((n) => n + 1)} className={buttonClass}>
             Refresh
           </button>
-          <a href={`${exportBase}xlsx&hostelId=${hostelId}`} className={buttonClass}>
+          <a href={`${exportBase}xlsx&hostelId=${hostelId}${dayParam}`} className={buttonClass}>
             Download Excel
           </a>
-          <a href={`${exportBase}pdf&hostelId=${hostelId}`} className={buttonClass}>
+          <a href={`${exportBase}pdf&hostelId=${hostelId}${dayParam}`} className={buttonClass}>
             Download PDF
           </a>
-          <a href={`${exportBase}xlsx`} className={buttonClass}>
+          <a href={`${exportBase}xlsx${dayParam}`} className={buttonClass}>
             All hostels (Excel)
           </a>
-          <a href={`${exportBase}pdf`} className={buttonClass}>
+          <a href={`${exportBase}pdf${dayParam}`} className={buttonClass}>
             All hostels (PDF)
           </a>
         </div>
