@@ -1,19 +1,33 @@
+# Dependencies
 node_modules/
+
+# Next.js
 .next/
 out/
-coverage/
-*.tsbuildinfo
 next-env.d.ts
 
-# secrets
+# Testing and coverage
+coverage/
+
+# TypeScript
+*.tsbuildinfo
+
+# Local data
+/data/
+
+# Package lock file (ignore only if intentional)
+package-lock.json
+
+# Secrets
 .env
 .env.local
 .env.*.local
 
-# local database and local seed data
+# Local database and seed data
 local.db
 local.db-journal
 scripts/seed-staff.json
 
+# OS and deployment
 .DS_Store
-.vercel
+.vercel/
