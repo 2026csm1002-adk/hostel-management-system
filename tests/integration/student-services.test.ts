@@ -185,14 +185,47 @@ describe("Integration: student services (in-memory store)", () => {
     await expect(complaintService.reregister(email(2), c.id)).rejects.toThrow(/not found/i);
   });
 
+  it("complaints: the student can mark their own complaint as resolved", async () => {
+    await profileService.upsertProfile(email(1), profile(1));
+    const c = await complaintService.create(email(1), { category: "Plumbing", description: "Tap leaks" });
+
+    // another student cannot resolve it
+    await profileService.upsertProfile(email(2), profile(2));
+    await expect(complaintService.markResolved(email(2), c.id)).rejects.toThrow(/not found/i);
+
+    const done = await complaintService.markResolved(email(1), c.id);
+    expect(done.status).toBe("Resolved");
+    expect(done.canReregister).toBe(false);
+    expect(memory.complaints[0].resolvedAt).not.toBeNull();
+    expect((await complaintService.listMine(email(1)))[0].status).toBe("Resolved");
+
+    await expect(complaintService.markResolved(email(1), c.id)).rejects.toThrow(/already resolved/);
+    await expect(complaintService.markResolved(email(1), "no-such-id")).rejects.toThrow(/not found/i);
+  });
+
+  it("complaints: resolving a re-registered complaint closes the older tickets too", async () => {
+    await profileService.upsertProfile(email(1), profile(1));
+    const old = await complaintService.create(email(1), { category: "Electrical", description: "Fan broken" });
+    memory.complaints[0].createdAt = new Date(Date.now() - 8 * 86_400_000).toISOString();
+    const fresh = await complaintService.reregister(email(1), old.id);
+
+    // the old ticket was replaced: only the newer one can be resolved
+    await expect(complaintService.markResolved(email(1), old.id)).rejects.toThrow(/newer ticket/);
+    await complaintService.markResolved(email(1), fresh.id);
+
+    const list = await complaintService.listMine(email(1));
+    expect(list.every((x) => x.status === "Resolved")).toBe(true);
+  });
+
   it("swap: submits as Pending with optional attachment; rejects bad files", async () => {
     await profileService.upsertProfile(email(1), profile(1));
     const plain = await swapService.submit(email(1), { reason: "Need a quieter room" });
-    expect(plain).toMatchObject({ status: "Pending", attachmentName: null });
+    expect(plain).toMatchObject({ status: "Pending", attachmentName: null, attachmentUrl: null });
 
     const pdf = new File(["x"], "certificate.pdf", { type: "application/pdf" });
     const withFile = await swapService.submit(email(1), { reason: "Medical reason" }, pdf);
     expect(withFile.attachmentName).toBe("certificate.pdf");
+    expect(withFile.attachmentUrl).toBeNull(); // no Drive in tests: the file gets a fake dev id, so there is no link
 
     await expect(
       swapService.submit(email(1), { reason: "Medical reason" }, new File(["x"], "a.exe", { type: "application/x-msdownload" })),

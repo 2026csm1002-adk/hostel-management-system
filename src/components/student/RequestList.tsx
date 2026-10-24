@@ -5,8 +5,7 @@ import { COMPLAINT_CATEGORIES } from "@/lib/constants";
 import { apiFetch, errorMessage } from "@/lib/api-client";
 import { formatDateLabel } from "@/lib/dates";
 import type { CleaningBookingDTO, ComplaintDTO, SwapDTO } from "@/types";
-import { StatusChip } from "@/components/shared/StatusChip";
-import { shortId } from "@/lib/ids";
+import { StatusChip } from "./StatusChip";
 
 type Row = {
   id: string;
@@ -19,9 +18,12 @@ type Row = {
   open: boolean;
   sortKey: string; // newest first; cleaning uses its booking time, so upcoming bookings come first
   notes: string[];
+  attachment?: { name: string; url: string | null };
   reregisterId?: string;
+  resolveId?: string; // a complaint the student can still mark as resolved
 };
 
+const shortId = (id: string) => id.slice(0, 8).toUpperCase();
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 
 function buildRows(c: CleaningBookingDTO[], q: ComplaintDTO[], s: SwapDTO[]): Row[] {
@@ -31,7 +33,7 @@ function buildRows(c: CleaningBookingDTO[], q: ComplaintDTO[], s: SwapDTO[]): Ro
       kind: "cleaning",
       typeLabel: "Room cleaning",
       title: `${b.floorLabel} · ${b.label} · ${formatDateLabel(b.date)}`,
-      meta: `Wing ${b.wing} · Room ${b.roomNo} · seat ${b.seat}`,
+      meta: `Room ${b.roomNo} · seat ${b.seat}`,
       status: b.status,
       open: b.status === "Confirmed",
       sortKey: `${b.date}T${b.slotStart}`,
@@ -52,6 +54,7 @@ function buildRows(c: CleaningBookingDTO[], q: ComplaintDTO[], s: SwapDTO[]): Ro
         ...(x.reregistered ? ["Re-registered — see the newer ticket."] : []),
       ],
       reregisterId: x.canReregister ? x.id : undefined,
+      resolveId: x.status !== "Resolved" && !x.reregistered ? x.id : undefined,
     })),
     ...s.map<Row>((x) => ({
       id: x.id,
@@ -65,8 +68,8 @@ function buildRows(c: CleaningBookingDTO[], q: ComplaintDTO[], s: SwapDTO[]): Ro
       notes: [
         ...(x.wardenComment ? [`Warden’s note: ${x.wardenComment}`] : []),
         ...(x.assignedRoom ? [`New room assigned: ${x.assignedRoom}`] : []),
-        ...(x.attachmentName ? [`Attachment: ${x.attachmentName}`] : []),
       ],
+      attachment: x.attachmentName ? { name: x.attachmentName, url: x.attachmentUrl } : undefined,
     })),
   ];
   return rows.sort((a, b) => b.sortKey.localeCompare(a.sortKey));
@@ -79,6 +82,7 @@ export function RequestList({ refreshKey }: { refreshKey: number }) {
   const [filter, setFilter] = useState("All");
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
   const key = `${refreshKey}-${tick}`;
 
   useEffect(() => {
@@ -102,6 +106,20 @@ export function RequestList({ refreshKey }: { refreshKey: number }) {
       setTick((n) => n + 1);
     } catch (e) {
       setActionError(errorMessage(e));
+    }
+  }
+
+  async function markResolved(id: string) {
+    if (!window.confirm("Mark this complaint as resolved? It cannot be reopened.")) return;
+    setActionError(null);
+    setResolvingId(id);
+    try {
+      await apiFetch(`/api/complaints/${id}/resolve`, { method: "POST" });
+      setTick((n) => n + 1);
+    } catch (e) {
+      setActionError(errorMessage(e));
+    } finally {
+      setResolvingId(null);
     }
   }
 
@@ -165,6 +183,33 @@ export function RequestList({ refreshKey }: { refreshKey: number }) {
                     {n}
                   </div>
                 ))}
+                {r.attachment && (
+                  <div className="mt-1.5 rounded-[3px] bg-paper px-2.5 py-1.5 text-xs text-ink-soft">
+                    Attachment:{" "}
+                    {r.attachment.url ? (
+                      <a
+                        href={r.attachment.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-semibold text-teal underline"
+                      >
+                        {r.attachment.name} (view document)
+                      </a>
+                    ) : (
+                      r.attachment.name
+                    )}
+                  </div>
+                )}
+                {r.resolveId && (
+                  <button
+                    type="button"
+                    disabled={resolvingId === r.resolveId}
+                    onClick={() => markResolved(r.resolveId!)}
+                    className="mr-2 mt-2 rounded-[3px] border border-line-strong px-3 py-1.5 text-xs font-semibold hover:border-ink disabled:opacity-50"
+                  >
+                    {resolvingId === r.resolveId ? "Saving…" : "Mark as resolved"}
+                  </button>
+                )}
                 {r.reregisterId && (
                   <button
                     type="button"

@@ -1,3 +1,4 @@
+import { ComplaintsNavTag, SwapsNavTag } from "@/components/caretaker/CaretakerNavTags";
 import { RoleLayout } from "@/components/layout/RoleLayout";
 import { HOSTELS } from "@/lib/constants";
 import { requirePageRole } from "@/server/page-guards";
@@ -15,8 +16,22 @@ export default async function CaretakerLayout({ children }: { children: React.Re
       subtitle="Complaints and room-swap requests from students of your hostel."
       chipText={`Caretaker · ${hostel}`}
       tabs={[
-        { href: "/caretaker/complaints", label: "Complaints" },
-        { href: "/caretaker/swaps", label: "Swap requests" },
+        {
+          href: "/caretaker/complaints",
+          label: (
+            <>
+              Complaints <ComplaintsNavTag />
+            </>
+          ),
+        },
+        {
+          href: "/caretaker/swaps",
+          label: (
+            <>
+              Swap requests <SwapsNavTag />
+            </>
+          ),
+        },
       ]}
     >
       {children}

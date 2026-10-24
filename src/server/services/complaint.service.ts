@@ -56,6 +56,35 @@ export const complaintService = {
     return rows.map((r) => toDTO(r, replaced.has(r.complaintId)));
   },
 
+  /**
+   * The student who made the complaint marks it as resolved. A complaint that was re-registered cannot be
+   * resolved itself: the newer ticket is the live one, and resolving that also closes the older tickets it replaced.
+   */
+  async markResolved(email: string, complaintId: string): Promise<ComplaintDTO> {
+    const student = await profileService.requireProfile(email);
+    const row = await complaintRepo.findById(complaintId);
+    if (!row || row.studentId !== student.studentId) throw new NotFoundError("Complaint not found.");
+
+    if (row.status === "Resolved") throw new ValidationError("This complaint is already resolved.");
+    if (await complaintRepo.hasBeenReregistered(row.complaintId)) {
+      throw new ValidationError("This complaint was re-registered. Mark the newer ticket as resolved instead.");
+    }
+
+    const now = new Date().toISOString();
+    const resolved = await complaintRepo.markResolved(row.complaintId, now);
+    if (!resolved) throw new ConflictError("This complaint is already resolved."); // someone resolved it a moment ago
+
+    // The older tickets this one replaced are done too.
+    let older = resolved.reregisteredFrom;
+    while (older) {
+      const parent = await complaintRepo.findById(older);
+      if (!parent || parent.studentId !== student.studentId) break;
+      await complaintRepo.markResolved(parent.complaintId, now);
+      older = parent.reregisteredFrom;
+    }
+    return toDTO(resolved, false);
+  },
+
   /** Not resolved, at least 7 days old, and not already re-registered. */
   async reregister(email: string, complaintId: string): Promise<ComplaintDTO> {
     const student = await profileService.requireProfile(email);
