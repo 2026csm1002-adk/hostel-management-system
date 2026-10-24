@@ -34,7 +34,7 @@ async function toStaffDTO({ complaint, student }: ComplaintWithStudent): Promise
     createdAt: complaint.createdAt,
     daysOld: daysBetween(isoDateInZone(new Date(complaint.createdAt)), todayISO()),
     studentName: student.fullName,
-    email: student.email,
+    email: student.googleEmail,
     mobileNo: (await mobileRepo.get(student.studentId)) ?? "",
     wing: student.wing,
     roomNo: student.roomNo,
