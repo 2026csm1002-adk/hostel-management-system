@@ -75,21 +75,26 @@ export const caretakerComplaintService = {
     return toStaffDTO({ complaint: updated!, student });
   },
 
-  /** Every complaint of my hostel as a CSV or PDF file. */
-  async export(user: SessionUser, format: "csv" | "pdf" | "xlsx", category?: ComplaintCategory): Promise<ExportFile> {
+  /**
+   * Download for my hostel. scope "new" = only new (Open) complaints; "all" = new first, then in process
+   * (resolved ones are not included). The files are grouped by category.
+   */
+  async export(
+    user: SessionUser,
+    format: "csv" | "pdf" | "xlsx",
+    category?: ComplaintCategory,
+    scope: "new" | "all" = "all",
+  ): Promise<ExportFile> {
     requireRole(user, ["Caretaker"]);
     const hostelId = requireHostel(user);
     const visible = (await caretakerComplaintRepo.listByHostel(hostelId, category)).filter(stillShown);
-    const rows = await Promise.all(visible.map(toStaffDTO));
-    const filename = `complaints-${hostelId}${category ? `-${category.toLowerCase()}` : ""}-${todayISO()}.${format}`;
+    const everyone = await Promise.all(visible.map(toStaffDTO));
+    const rows = everyone.filter((r) => (scope === "new" ? r.status === "Open" : r.status !== "Resolved"));
+    const filename = `${scope}-complaints-${hostelId}${category ? `-${category.toLowerCase()}` : ""}-${todayISO()}.${format}`;
     const hostelName = HOSTELS.find((h) => h.id === hostelId)?.name ?? hostelId;
-    // Excel = only NEW complaints (status Open); in-progress and resolved ones are left out.
-    if (format === "xlsx") {
-      const fresh = rows.filter((r) => r.status === "Open");
-      return complaintExportService.xlsx(fresh, filename, category ? [category] : undefined);
-    }
-    return format === "csv"
-      ? complaintExportService.csv(rows, filename)
-      : complaintExportService.pdf(rows, hostelName, filename);
+    const opts = { showStatus: scope === "all", categories: category ? [category] : undefined };
+    if (format === "xlsx") return complaintExportService.xlsx(rows, filename, opts);
+    if (format === "csv") return complaintExportService.csv(rows, filename, opts);
+    return complaintExportService.pdf(rows, hostelName, filename, { ...opts, title: scope === "new" ? "New" : "New and in process" });
   },
 };

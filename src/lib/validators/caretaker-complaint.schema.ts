@@ -10,4 +10,5 @@ export const complaintListQuerySchema = z.object({
 export const complaintExportQuerySchema = z.object({
   format: z.enum(["csv", "pdf", "xlsx"], { error: "Choose CSV, PDF or Excel" }),
   category: z.enum(COMPLAINT_CATEGORIES).optional(), // one category page, or all when missing
+  scope: z.enum(["new", "all"]).optional(), // new = only new complaints; all (default) = new + in process
 });

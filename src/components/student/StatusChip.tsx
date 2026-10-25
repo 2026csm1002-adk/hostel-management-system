@@ -15,11 +15,12 @@ const STYLES: Record<string, { label: string; className: string }> = {
   Waiting: { label: "Waiting", className: "bg-amber-soft text-amber" },
 };
 
-export function StatusChip({ status }: { status: string }) {
+// `label` replaces the default wording (the colour still follows `status`).
+export function StatusChip({ status, label }: { status: string; label?: string }) {
   const s = STYLES[status] ?? { label: status, className: "bg-paper text-ink-soft" };
   return (
     <span className={"whitespace-nowrap rounded-full px-2.5 py-1 font-mono text-[11.5px] font-semibold " + s.className}>
-      {s.label}
+      {label ?? s.label}
     </span>
   );
 }

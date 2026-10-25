@@ -74,15 +74,21 @@ export function ComplaintQueue({ category }: { category?: ComplaintCategory }) {
           <h3 className="text-[15px]">{category ? `${category} complaints` : "Complaints"}</h3>
           <span className="font-mono text-xs text-ink-soft">{open} open</span>
         </div>
-        <div className="flex gap-2">
-          <a href={`/api/complaints/export?format=xlsx${exportQuery}`} className={btn}>
-            Download Excel (new only)
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={reload} disabled={loading} className={btn}>
+            {loading ? "Refreshing…" : "Refresh"}
+          </button>
+          <a href={`/api/complaints/export?format=xlsx&scope=new${exportQuery}`} className={btn}>
+            New Complaint Excel
           </a>
-          <a href={`/api/complaints/export?format=csv${exportQuery}`} className={btn}>
-            Download CSV
+          <a href={`/api/complaints/export?format=xlsx&scope=all${exportQuery}`} className={btn}>
+            All Complaint Excel
           </a>
-          <a href={`/api/complaints/export?format=pdf${exportQuery}`} className={btn}>
-            Download PDF
+          <a href={`/api/complaints/export?format=pdf&scope=new${exportQuery}`} className={btn}>
+            New Complaint PDF
+          </a>
+          <a href={`/api/complaints/export?format=pdf&scope=all${exportQuery}`} className={btn}>
+            All Complaint PDF
           </a>
         </div>
       </div>

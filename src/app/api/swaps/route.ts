@@ -12,8 +12,7 @@ export function POST(req: Request) {
     const input = submitSwapSchema.parse({ reason: form.get("reason") });
     const file = form.get("file");
     const upload = file instanceof File && file.size > 0 ? file : null;
-    // The document goes to the student's own Google Drive, with their own token.
-    // The token is only needed (and only asked for) when a file is attached.
+    // The document goes to the student's own Drive, with their own token (only asked for when a file is attached).
     const driveToken = upload ? await getDriveAccessToken(req) : null;
     return { swap: await swapService.submit(email, input, upload, driveToken) };
   }, 201);
@@ -21,13 +20,11 @@ export function POST(req: Request) {
 
 // GET /api/swaps
 //   Student   -> my swap requests
-//   Warden    -> requests forwarded to me
-//   Caretaker -> requests of my hostel
+//   Caretaker -> swap requests of my hostel
 export function GET() {
   return respond(async () => {
-    const user = await requireUser(["Student", "Warden", "Caretaker"]);
+    const user = await requireUser(["Student", "Caretaker"]);
     if (user.role === "Caretaker") return { swaps: await caretakerSwapService.list(user) };
-    if (user.role === "Warden") return { swaps: await swapService.listForWarden(user) };
     return { swaps: await swapService.listMine(user.email) };
   });
 }

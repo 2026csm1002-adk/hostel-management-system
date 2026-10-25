@@ -5,6 +5,7 @@ import { COMPLAINT_CATEGORIES } from "@/lib/constants";
 import { apiFetch, errorMessage } from "@/lib/api-client";
 import { formatDateLabel } from "@/lib/dates";
 import type { CleaningBookingDTO, ComplaintDTO, SwapDTO } from "@/types";
+import { swapStatusLabel } from "@/lib/swap-labels";
 import { StatusChip } from "./StatusChip";
 
 type Row = {
@@ -15,6 +16,7 @@ type Row = {
   title: string;
   meta: string;
   status: string;
+  statusLabel?: string; // wording shown to the student when it differs from the stored status
   open: boolean;
   sortKey: string; // newest first; cleaning uses its booking time, so upcoming bookings come first
   notes: string[];
@@ -63,6 +65,7 @@ function buildRows(c: CleaningBookingDTO[], q: ComplaintDTO[], s: SwapDTO[]): Ro
       title: x.reason,
       meta: day(x.createdAt),
       status: x.status,
+      statusLabel: swapStatusLabel(x.status),
       open: !["Rejected", "RoomAssigned"].includes(x.status),
       sortKey: x.createdAt,
       notes: [
@@ -220,7 +223,7 @@ export function RequestList({ refreshKey }: { refreshKey: number }) {
                   </button>
                 )}
               </div>
-              <StatusChip status={r.status} />
+              <StatusChip status={r.status} label={r.statusLabel} />
             </li>
           ))}
         </ul>

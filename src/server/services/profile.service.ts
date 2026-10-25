@@ -46,9 +46,26 @@ export const profileService = {
     return row;
   },
 
-  async upsertProfile(email: string, data: ProfileInput): Promise<StudentProfile> {
+  /**
+   * Keeps the saved name the same as the name on the student's Google account. Does nothing when Google
+   * gave no name (the saved one stays; no placeholder is ever made up).
+   */
+  async syncNameFromGoogle(email: string, googleName: string | null | undefined): Promise<void> {
+    const name = googleName?.replace(/\s+/g, " ").trim();
+    if (!name) return;
+    try {
+      const row = await studentRepo.findByEmail(email.trim().toLowerCase());
+      if (row && row.fullName !== name) await studentRepo.upsert({ ...row, fullName: name });
+    } catch (e) {
+      console.error("[profile] could not update the name from Google:", e);
+    }
+  },
+
+  /** `googleName` is the name on the signed-in Google account; when there is one it is used, not what the browser sent. */
+  async upsertProfile(email: string, data: ProfileInput, googleName?: string | null): Promise<StudentProfile> {
     // Nothing is saved until every detail is filled (the form checks this too, this service is also called without it).
-    if (!data.fullName?.trim()) throw new ValidationError("Enter your full name.");
+    const fullName = googleName?.replace(/\s+/g, " ").trim() || data.fullName?.replace(/\s+/g, " ").trim();
+    if (!fullName) throw new ValidationError("Enter your full name.");
     if (!data.course) throw new ValidationError("Choose your course.");
     if (!data.mobileNo?.trim()) throw new ValidationError("Enter your mobile number.");
     const mobileNo = normalizeMobile(data.mobileNo);
@@ -72,7 +89,7 @@ export const profileService = {
 
     const saved = await studentRepo.upsert({
       studentId,
-      fullName: data.fullName,
+      fullName,
       googleEmail: identity.email,
       hostelId: data.hostelId,
       wing: data.wing.toUpperCase(),

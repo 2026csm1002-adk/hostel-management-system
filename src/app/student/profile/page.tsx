@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { ProfileForm } from "@/components/student/ProfileForm";
-import { displayName, parseStudentEmail } from "@/lib/student-identity";
+import { parseStudentEmail } from "@/lib/student-identity";
+import { getGoogleName } from "@/server/google-name";
 
 export default async function StudentProfilePage() {
   const session = await auth();
@@ -14,7 +15,8 @@ export default async function StudentProfilePage() {
   return (
     <ProfileForm
       identity={{
-        name: displayName(session?.user?.name, id),
+        // The Google name, exactly as Google gives it. Empty when Google has none: no placeholder is made up.
+        name: (await getGoogleName()) ?? "",
         rollNo: id.rollNo,
         email: id.email,
         batch: id.batch,

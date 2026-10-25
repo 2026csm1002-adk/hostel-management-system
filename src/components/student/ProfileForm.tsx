@@ -50,8 +50,13 @@ function ProfileFields({
   profile: StudentProfile | null;
   onSaved: (p: StudentProfile) => void;
 }) {
-  // The name comes from the institute account and cannot be edited here.
-  const fullName = profile?.fullName ?? identity.name;
+  // The name comes from the Google account and cannot be edited. Only when Google has no name for the
+  // account, the student types it once (an old "Student 18" placeholder counts as no name).
+  const googleName = identity.name.trim();
+  const [typedName, setTypedName] = useState(
+    googleName || /^Student \d+$/i.test(profile?.fullName ?? "") ? "" : (profile?.fullName ?? ""),
+  );
+  const fullName = googleName || typedName;
   const [hostelId, setHostelId] = useState(profile?.hostelId ?? "");
   const [wing, setWing] = useState(profile?.wing ?? "");
   const [roomNo, setRoomNo] = useState(profile?.roomNo ?? "");
@@ -78,6 +83,7 @@ function ProfileFields({
 
   // The profile is saved only when every detail is filled in.
   const missing = [
+    !fullName.trim() && "Full name",
     rollEditable && !rollNo.trim() && "Roll No",
     batchEditable && !batch.trim() && "Batch",
     !hostelId && "Hostel",
@@ -119,7 +125,16 @@ function ProfileFields({
     <div className="rounded-[3px] border border-line bg-white p-[18px]">
       <div className="grid gap-x-4 gap-y-3.5 sm:grid-cols-2">
         <Field label="Full name">
-          <ReadOnly value={fullName} />
+          {googleName ? (
+            <ReadOnly value={googleName} />
+          ) : (
+            <input
+              className={inputClass}
+              value={typedName}
+              placeholder="Your full name"
+              onChange={(e) => setTypedName(e.target.value)}
+            />
+          )}
         </Field>
         <Field label="Roll No">
           {rollEditable ? (
