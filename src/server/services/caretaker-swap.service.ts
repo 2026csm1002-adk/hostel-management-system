@@ -8,7 +8,9 @@ import { fileStorage } from "@/server/storage/file-storage.client";
 import { staffUserRepo } from "@/server/repositories/staff-user.repo";
 import { studentRepo } from "@/server/repositories/student.repo";
 import { swapRequestRepo, type SwapWithStudent } from "@/server/repositories/swap-request.repo";
+import { addNote, notesFor } from "@/server/swap-notes";
 import { requireHostel, requireRole } from "@/server/services/auth.service";
+import type { MessageInput } from "@/lib/validators/swap.schema";
 import type { SessionUser, StaffSwapDTO, SwapStatus } from "@/types";
 import type { CaretakerSwapDTO } from "@/types/caretaker";
 
@@ -27,8 +29,9 @@ async function toDTO({ swap, student }: SwapWithStudent): Promise<CaretakerSwapD
     attachmentUrl: attachment ? fileStorage.viewUrl(attachment.storageFileId) : null,
     caretakerComment: swap.caretakerComment,
     assignedRoom: swap.assignedRoom,
-    wardenComment: swap.wardenComment,
+    wardenComment: notesFor(swap.wardenComment, "Caretaker"), // the warden's own messages are not shown to the caretaker
     studentName: student.fullName,
+    email: student.googleEmail,
     wing: student.wing,
     roomNo: student.roomNo,
     batch: student.batch,
@@ -58,6 +61,7 @@ export const caretakerSwapService = {
   /** Requests of my hostel, newest first. */
   async list(user: SessionUser): Promise<CaretakerSwapDTO[]> {
     requireRole(user, ["Caretaker"]);
+    await swapRequestRepo.clearMessagesOfClosed();
     const rows = await caretakerSwapRepo.listByHostel(requireHostel(user));
     return Promise.all(rows.map(toDTO));
   },
@@ -80,7 +84,18 @@ export const caretakerSwapService = {
     return toDTO({ swap: updated!, student });
   },
 
-  /** Accepted -> AwaitingRoom: the warden said yes, but no room is free yet. */
+  /** Accepted -> Waiting: the warden said yes, but no room is free. A message for the student is required. */
+  async markWaiting(user: SessionUser, swapId: string, input: MessageInput): Promise<CaretakerSwapDTO> {
+    const { swap, student } = await loadOwned(user, swapId);
+    mustBe(swap.status, ["Accepted", "AwaitingRoom"], "put on the waiting list");
+    const updated = await swapRequestRepo.update(swapId, {
+      status: "Waiting",
+      wardenComment: addNote(swap.wardenComment, "Caretaker", input.message),
+    });
+    return toDTO({ swap: updated!, student });
+  },
+
+  /** Accepted -> AwaitingRoom: kept for older requests; the screen now uses markWaiting. */
   async markAwaitingRoom(user: SessionUser, swapId: string): Promise<CaretakerSwapDTO> {
     const { swap, student } = await loadOwned(user, swapId);
     mustBe(swap.status, ["Accepted"], "marked as awaiting a room");
@@ -88,16 +103,22 @@ export const caretakerSwapService = {
     return toDTO({ swap: updated!, student });
   },
 
-  /** Accepted or AwaitingRoom -> RoomAssigned. */
+  /** Accepted, AwaitingRoom or Waiting -> RoomAssigned. */
   async assignRoom(user: SessionUser, swapId: string, input: AssignRoomInput): Promise<CaretakerSwapDTO> {
     const { swap, student } = await loadOwned(user, swapId);
-    mustBe(swap.status, ["Accepted", "AwaitingRoom"], "given a room");
+    mustBe(swap.status, ["Accepted", "AwaitingRoom", "Waiting"], "given a room");
 
     // The new room must be a room that exists in this hostel's numbering (for example 001 or 105).
     const problem = roomError(student.hostelId, input.room);
     if (problem) throw new ValidationError(problem);
 
-    const updated = await swapRequestRepo.update(swapId, { assignedRoom: input.room, status: "RoomAssigned" });
+    // The request is closed now: every message on it is wiped (the room and status stay).
+    const updated = await swapRequestRepo.update(swapId, {
+      assignedRoom: input.room,
+      status: "RoomAssigned",
+      wardenComment: null,
+      caretakerComment: null,
+    });
     return toDTO({ swap: updated!, student });
   },
 };

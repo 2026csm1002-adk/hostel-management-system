@@ -3,68 +3,64 @@
 import { useState } from "react";
 import { errorMessage, sendJson } from "@/lib/api-client";
 
-type Decision = "Accept" | "Reject" | "Waiting";
+type Action = "Accept" | "Reject";
 
-const btn = "rounded-[3px] border px-3 py-1.5 text-xs font-semibold disabled:opacity-50";
-const LABEL: Record<Decision, string> = { Accept: "Accept", Reject: "Reject", Waiting: "Mark waiting" };
-const TONE: Record<Decision, string> = {
+const btn = "rounded-[3px] border px-2.5 py-1 text-xs font-semibold disabled:opacity-50";
+const NEUTRAL = "border-line-strong bg-white hover:border-ink";
+const LABEL: Record<Action, string> = { Accept: "Accept", Reject: "Reject" };
+const TONE: Record<Action, string> = {
   Accept: "border-green bg-green text-white hover:opacity-90",
   Reject: "border-brick bg-brick text-white hover:opacity-90",
-  Waiting: "border-amber bg-amber text-white hover:opacity-90",
 };
+const PLACEHOLDER: Record<Action, string> = {
+  Accept: "Anything the student should know",
+  Reject: "Why is the request rejected? (you can leave this empty)",
+};
+const SEND_LABEL: Record<Action, string> = { Accept: "Confirm accept", Reject: "Confirm reject" };
 
 /**
- * Accept / Reject / Mark waiting for one request.
- * Choosing a decision opens a comment box (required for Reject and Waiting, optional for Accept)
- * and the decision is sent only after "Confirm".
+ * What the warden does with a forwarded request: Accept or Reject (the comment is optional for both).
+ * Once the request is accepted the warden's work is done; the caretaker assigns the room.
  */
-export function DecisionPanel({
-  swapId,
-  status,
-  onDone,
-}: {
-  swapId: string;
-  status: string;
-  onDone: () => void;
-}) {
-  const [decision, setDecision] = useState<Decision | null>(null);
+export function DecisionPanel({ swapId, onDone }: { swapId: string; onDone: () => void }) {
+  const [action, setAction] = useState<Action | null>(null);
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // A request already on hold can still be accepted or rejected, but not put on hold again.
-  const choices: Decision[] = status === "Waiting" ? ["Accept", "Reject"] : ["Accept", "Reject", "Waiting"];
-  const needsComment = decision !== null && decision !== "Accept";
-
   async function confirm() {
-    if (!decision) return;
+    if (!action) return;
+    const text = comment.trim();
     setBusy(true);
     setError(null);
     try {
-      await sendJson(`/api/swaps/${swapId}/decision`, { decision, comment: comment.trim() || undefined });
+      await sendJson(`/api/swaps/${swapId}/decision`, { decision: action, comment: text || undefined });
+      setAction(null);
+      setComment("");
       onDone();
     } catch (e) {
       setError(errorMessage(e));
+    } finally {
       setBusy(false);
     }
   }
 
-  if (!decision) {
+  if (!action) {
     return (
-      <>
-        {choices.map((d) => (
-          <button key={d} type="button" onClick={() => setDecision(d)} className={`${btn} ${TONE[d]}`}>
-            {LABEL[d]}
+      <div className="flex w-full flex-wrap items-center gap-2">
+        {(["Accept", "Reject"] as Action[]).map((a) => (
+          <button key={a} type="button" onClick={() => setAction(a)} className={`${btn} ${TONE[a]}`}>
+            {LABEL[a]}
           </button>
         ))}
-      </>
+      </div>
     );
   }
 
   return (
     <div className="w-full">
       <label htmlFor={`c-${swapId}`} className="mb-1 block text-xs font-semibold">
-        Comment for the student {needsComment ? "(required)" : "(optional)"}
+        Comment for the student (optional)
       </label>
       <textarea
         id={`c-${swapId}`}
@@ -72,26 +68,21 @@ export function DecisionPanel({
         maxLength={500}
         value={comment}
         onChange={(e) => setComment(e.target.value)}
-        placeholder={decision === "Reject" ? "Why is the request rejected?" : decision === "Waiting" ? "What are we waiting for?" : "Anything the student should know"}
+        placeholder={PLACEHOLDER[action]}
         className="w-full rounded-[3px] border border-line-strong bg-white px-2.5 py-2 text-xs"
       />
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          disabled={busy || (needsComment && comment.trim() === "")}
-          onClick={confirm}
-          className={`${btn} ${TONE[decision]}`}
-        >
-          {busy ? "Saving…" : `Confirm ${LABEL[decision].toLowerCase()}`}
+        <button type="button" disabled={busy} onClick={confirm} className={`${btn} ${TONE[action]}`}>
+          {busy ? "Saving…" : SEND_LABEL[action]}
         </button>
         <button
           type="button"
           disabled={busy}
           onClick={() => {
-            setDecision(null);
+            setAction(null);
             setError(null);
           }}
-          className={`${btn} border-line-strong bg-white hover:border-ink`}
+          className={`${btn} ${NEUTRAL}`}
         >
           Cancel
         </button>

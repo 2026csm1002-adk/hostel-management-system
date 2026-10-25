@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-const btn = "rounded-[3px] border border-line-strong bg-white px-3 py-1.5 text-xs font-semibold hover:border-ink disabled:opacity-50";
+const btn = "rounded-[3px] border border-line-strong bg-white px-2.5 py-1 text-xs font-semibold hover:border-ink disabled:opacity-50";
 const COMMENT_MAX = 500;
 
 /**
@@ -49,7 +49,7 @@ export function ForwardForm({
           type="button"
           disabled={busy}
           onClick={() => onForward(comment.trim())}
-          className="rounded-[3px] border border-ink bg-ink px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+          className="rounded-[3px] border border-ink bg-ink px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
         >
           {busy ? "Sending…" : "Send to warden"}
         </button>

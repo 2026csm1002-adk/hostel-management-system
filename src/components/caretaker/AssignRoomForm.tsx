@@ -1,23 +1,26 @@
 "use client";
 
 import { useState } from "react";
+import { MessageForm } from "@/components/shared/MessageForm";
 
-const btn = "rounded-[3px] border border-line-strong bg-white px-3 py-1.5 text-xs font-semibold hover:border-ink disabled:opacity-50";
+const btn = "rounded-[3px] border border-line-strong bg-white px-2.5 py-1 text-xs font-semibold hover:border-ink disabled:opacity-50";
 
 /**
- * The room box of an accepted request: type the new room and Assign room, or say that no room is free yet.
- * "No room available" is offered only while the request is still Accepted (not again once it is waiting for a room).
+ * The room box of an accepted request: type the new room and Assign room, or Mark waiting when no room is free
+ * (that needs a message for the student). "Mark waiting" is offered only until the request is already waiting.
  */
 export function AssignRoomForm({
-  canMarkNoRoom,
+  swapId,
+  canMarkWaiting,
   busy,
   onAssign,
-  onNoRoom,
+  onWaiting,
 }: {
-  canMarkNoRoom: boolean;
+  swapId: string;
+  canMarkWaiting: boolean;
   busy: boolean;
   onAssign: (room: string) => void;
-  onNoRoom: () => void;
+  onWaiting: (message: string) => Promise<void>;
 }) {
   const [room, setRoom] = useState("");
   return (
@@ -28,15 +31,21 @@ export function AssignRoomForm({
         onChange={(e) => setRoom(e.target.value)}
         placeholder="New room, e.g. 214"
         maxLength={10}
-        className="w-40 rounded-[3px] border border-line-strong bg-white px-2.5 py-1.5 text-xs"
+        className="w-40 rounded-[3px] border border-line-strong bg-white px-2.5 py-1 text-xs"
       />
       <button type="button" disabled={busy || room.trim() === ""} onClick={() => onAssign(room.trim())} className={btn}>
         Assign room
       </button>
-      {canMarkNoRoom && (
-        <button type="button" disabled={busy} onClick={onNoRoom} className={btn}>
-          No room available
-        </button>
+      {canMarkWaiting && (
+        <MessageForm
+          id={`w-${swapId}`}
+          buttonLabel="Mark waiting"
+          label="Message for the student: why they are waiting"
+          placeholder="e.g. No room is free right now. You will get one as soon as it is"
+          confirmLabel="Confirm waiting"
+          disabled={busy}
+          onSend={onWaiting}
+        />
       )}
     </>
   );

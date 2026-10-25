@@ -15,10 +15,17 @@ const STYLES: Record<string, { label: string; className: string }> = {
   Waiting: { label: "Waiting", className: "bg-amber-soft text-amber" },
 };
 
-export function StatusChip({ status }: { status: string }) {
+/** `square` = the small square badge used on the ticket cards (same as the caretaker complaint cards). */
+export function StatusChip({ status, square = false }: { status: string; square?: boolean }) {
   const s = STYLES[status] ?? { label: status, className: "bg-paper text-ink-soft" };
   return (
-    <span className={"whitespace-nowrap rounded-full px-2.5 py-1 font-mono text-[11.5px] font-semibold " + s.className}>
+    <span
+      className={
+        "whitespace-nowrap font-mono text-[11.5px] font-semibold " +
+        (square ? "h-fit flex-none rounded-[3px] px-[9px] py-0.5 " : "rounded-full px-2.5 py-1 ") +
+        s.className
+      }
+    >
       {s.label}
     </span>
   );

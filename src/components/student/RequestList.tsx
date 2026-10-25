@@ -69,7 +69,7 @@ function buildRows(c: CleaningBookingDTO[], q: ComplaintDTO[], s: SwapDTO[]): Ro
       open: !["Rejected", "RoomAssigned"].includes(x.status),
       sortKey: x.createdAt,
       notes: [
-        ...(x.wardenComment ? [`Warden’s note: ${x.wardenComment}`] : []),
+        ...(x.wardenComment ? x.wardenComment.split("\n").map((l) => `Message · ${l}`) : []),
         ...(x.assignedRoom ? [`New room assigned: ${x.assignedRoom}`] : []),
       ],
       attachment: x.attachmentName ? { name: x.attachmentName, url: x.attachmentUrl } : undefined,

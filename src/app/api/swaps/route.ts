@@ -21,10 +21,12 @@ export function POST(req: Request) {
 // GET /api/swaps
 //   Student   -> my swap requests
 //   Caretaker -> swap requests of my hostel
+//   Warden    -> swap requests forwarded to me
 export function GET() {
   return respond(async () => {
-    const user = await requireUser(["Student", "Caretaker"]);
+    const user = await requireUser(["Student", "Caretaker", "Warden"]);
     if (user.role === "Caretaker") return { swaps: await caretakerSwapService.list(user) };
+    if (user.role === "Warden") return { swaps: await swapService.listForWarden(user) };
     return { swaps: await swapService.listMine(user.email) };
   });
 }

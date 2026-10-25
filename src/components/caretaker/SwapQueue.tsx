@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { AssignRoomForm } from "@/components/caretaker/AssignRoomForm";
 import { ForwardForm } from "@/components/caretaker/ForwardForm";
-import { Ticket } from "@/components/shared/Ticket";
+import { Ticket, daysAgo } from "@/components/shared/Ticket";
 import { useApi } from "@/components/shared/useApi";
 import { errorMessage, sendJson } from "@/lib/api-client";
 import type { CaretakerSwapDTO } from "@/types/caretaker";
@@ -16,12 +16,12 @@ const day = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "n
 const GROUPS: Record<string, string[] | null> = {
   All: null,
   "To forward": ["Pending"],
-  "With warden": ["Forwarded", "Waiting"],
-  "Room to assign": ["Accepted", "AwaitingRoom"],
+  "With warden": ["Forwarded"],
+  "Room to assign": ["Accepted", "AwaitingRoom", "Waiting"],
   Closed: ["Rejected", "RoomAssigned"],
 };
 const ORDER = ["Pending", "Accepted", "AwaitingRoom", "Forwarded", "Waiting", "Rejected", "RoomAssigned"];
-const NEEDS_ME = ["Pending", "Accepted", "AwaitingRoom"];
+const NEEDS_ME = ["Pending", "Accepted", "AwaitingRoom", "Waiting"];
 
 export function SwapQueue() {
   const { data, error, loading, reload } = useApi<{ swaps: CaretakerSwapDTO[] }>("/api/swaps");
@@ -38,8 +38,21 @@ export function SwapQueue() {
       setActionError(errorMessage(e)); // the list may be out of date, so it is reloaded below either way
     } finally {
       setBusyId(null);
-      reload();
-      window.dispatchEvent(new Event(CARETAKER_CHANGED_EVENT)); // refresh the numbers on the tabs
+      refresh();
+    }
+  }
+
+  function refresh() {
+    reload();
+    window.dispatchEvent(new Event(CARETAKER_CHANGED_EVENT)); // refresh the numbers on the tabs
+  }
+
+  /** For the "Mark waiting" box: it shows the error itself, so this one throws it. */
+  async function sendMessage(id: string, path: string, body: unknown) {
+    try {
+      await sendJson(`/api/swaps/${id}/${path}`, body);
+    } finally {
+      refresh();
     }
   }
 
@@ -56,9 +69,14 @@ export function SwapQueue() {
 
   return (
     <section>
-      <div className="mb-3 flex items-center gap-3">
-        <h3 className="text-[15px]">Swap requests</h3>
-        <span className="font-mono text-xs text-ink-soft">{needsMe} need your action</span>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-3">
+          <h3 className="text-[15px]">Swap requests</h3>
+          <span className="font-mono text-xs text-ink-soft">{needsMe} need your action</span>
+        </div>
+        <button type="button" onClick={refresh} disabled={loading} className={btn}>
+          {loading ? "Refreshing…" : "Refresh"}
+        </button>
       </div>
 
       <div className="mb-3.5 flex flex-wrap gap-1.5">
@@ -89,15 +107,15 @@ export function SwapQueue() {
           {all.length === 0 ? "No swap requests from your hostel yet." : "Nothing in this group."}
         </p>
       ) : (
-        <ul className={"flex flex-col gap-2.5 " + (loading ? "opacity-70" : "")}>
+        <ul className={"flex flex-col gap-2 " + (loading ? "opacity-70" : "")}>
           {visible.map((s) => {
             const busy = busyId === s.id;
             const notes = [
               ...(s.caretakerComment ? [`Your comment to the warden: ${s.caretakerComment}`] : []),
-              ...(s.wardenComment ? [`Warden’s note: ${s.wardenComment}`] : []),
+              ...(s.wardenComment ? s.wardenComment.split("\n").map((l) => `Message to student · ${l}`) : []),
               ...(s.assignedRoom ? [`New room assigned: ${s.assignedRoom}`] : []),
               ...(s.status === "Forwarded" ? ["Waiting for the warden’s decision."] : []),
-              ...(s.status === "Waiting" ? ["The warden put this on hold. It comes back to you only if it is accepted."] : []),
+              ...(s.status === "Waiting" ? ["Accepted, but no room was free. Assign one as soon as it is."] : []),
               ...(s.status === "Accepted" ? ["The warden accepted this request. Please assign a room."] : []),
               ...(s.status === "AwaitingRoom" ? ["Accepted, but no room was free. Assign one when it is."] : []),
             ];
@@ -106,8 +124,16 @@ export function SwapQueue() {
                 key={s.id}
                 id={s.id}
                 typeLabel="Room swap"
-                title={s.reason}
-                meta={`${s.studentName} · Mobile ${s.mobileNo || "not given"} · Room ${s.wing}-${s.roomNo} · Batch ${s.batch} · ${s.course} · ${day(s.createdAt)}`}
+                ago={daysAgo(s.createdAt)}
+                fields={[
+                  { label: "Name", value: s.studentName, bold: true },
+                  { label: "Email", value: s.email, breakAll: true },
+                  { label: "Mobile No.", value: s.mobileNo || "not given" },
+                  { label: "Room No.", value: `${s.wing}-${s.roomNo}` },
+                  { label: "Batch", value: s.batch },
+                  { label: "Course", value: s.course },
+                  { label: "Reason", value: s.reason, bold: true, wide: true },
+                ]}
                 status={s.status}
                 notes={notes}
               >
@@ -120,16 +146,22 @@ export function SwapQueue() {
                   ) : (
                     <span className="text-xs text-ink-soft">Document: {s.attachmentName} (no link available)</span>
                   ))}
-                {s.status === "Pending" && (
-                  <ForwardForm swapId={s.id} busy={busy} onForward={(comment) => act(s.id, "forward", { comment })} />
-                )}
-                {(s.status === "Accepted" || s.status === "AwaitingRoom") && (
-                  <AssignRoomForm
-                    canMarkNoRoom={s.status === "Accepted"}
-                    busy={busy}
-                    onAssign={(room) => act(s.id, "assign-room", { room })}
-                    onNoRoom={() => act(s.id, "awaiting-room")}
-                  />
+                {/* the action buttons sit on their own row, below the document */}
+                {(s.status === "Pending" || s.status === "Accepted" || s.status === "AwaitingRoom" || s.status === "Waiting") && (
+                  <div className="flex w-full flex-wrap items-center gap-2">
+                  {s.status === "Pending" && (
+                    <ForwardForm swapId={s.id} busy={busy} onForward={(comment) => act(s.id, "forward", { comment })} />
+                  )}
+                  {(s.status === "Accepted" || s.status === "AwaitingRoom" || s.status === "Waiting") && (
+                    <AssignRoomForm
+                      swapId={s.id}
+                      canMarkWaiting={s.status !== "Waiting"}
+                      busy={busy}
+                      onAssign={(room) => act(s.id, "assign-room", { room })}
+                      onWaiting={(message) => sendMessage(s.id, "waiting", { message })}
+                    />
+                  )}
+                  </div>
                 )}
               </Ticket>
             );

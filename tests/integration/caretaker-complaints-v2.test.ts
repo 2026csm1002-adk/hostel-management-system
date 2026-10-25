@@ -159,17 +159,17 @@ describe("Caretaker complaints: Excel download", () => {
     students.clear();
   });
 
-  it("has one sheet per category with the columns Ticket ID, Name, Email, Room No, Contact Number, Reason", async () => {
+  it("has one sheet per category with the columns Ticket ID, Name, Email, Room No, Contact Number, Reason, Date", async () => {
     const c1 = await asUser("c1@iitrpr.ac.in");
-    const f = await caretaker.export(c1, "xlsx");
+    const f = await caretaker.export(c1, "xlsx", undefined, "new");
     expect(f.contentType).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    expect(f.filename).toMatch(/^complaints-satluj-\d{4}-\d{2}-\d{2}\.xlsx$/);
+    expect(f.filename).toMatch(/^new-complaints-satluj-\d{4}-\d{2}-\d{2}\.xlsx$/);
 
     const wb = await workbook(f);
     expect(wb.worksheets.map((w) => w.name)).toEqual([...COMPLAINT_CATEGORIES]);
     for (const ws of wb.worksheets) {
       expect((ws.getRow(1).values as unknown[]).slice(1)).toEqual([
-        "Ticket ID", "Name", "Email", "Room No", "Contact Number", "Reason",
+        "Ticket ID", "Name", "Email", "Room No", "Contact Number", "Reason", "Date",
       ]);
       expect(ws.rowCount).toBe(1); // header only: nothing new yet
     }
@@ -204,18 +204,41 @@ describe("Caretaker complaints: Excel download", () => {
     await caretaker.updateStatus(c1, b.id, "InProgress");
     await caretaker.updateStatus(c1, c.id, "Resolved");
 
-    const ws = (await workbook(await caretaker.export(c1, "xlsx"))).getWorksheet("Plumbing")!;
+    const ws = (await workbook(await caretaker.export(c1, "xlsx", undefined, "new"))).getWorksheet("Plumbing")!;
     expect(ws.rowCount).toBe(2);
     expect((ws.getRow(2).values as unknown[])[6]).toBe("New one");
   });
 
-  it("a complaint that moves to in process disappears from the next Excel", async () => {
+  it("the ALL Excel has new + in process (with a Status column) but not resolved", async () => {
+    const c1 = await asUser("c1@iitrpr.ac.in");
+    await student(1, "satluj");
+    await complain(1, "Plumbing", "New one");
+    const b = await complain(1, "Plumbing", "In process one");
+    const c = await complain(1, "Plumbing", "Resolved one");
+    await caretaker.updateStatus(c1, b.id, "InProgress");
+    await caretaker.updateStatus(c1, c.id, "Resolved");
+
+    const f = await caretaker.export(c1, "xlsx", undefined, "all");
+    expect(f.filename).toMatch(/^all-complaints-satluj-\d{4}-\d{2}-\d{2}\.xlsx$/);
+    const ws = (await workbook(f)).getWorksheet("Plumbing")!;
+    expect((ws.getRow(1).values as unknown[]).slice(1)).toEqual([
+      "Ticket ID", "Name", "Email", "Room No", "Contact Number", "Reason", "Date", "Status",
+    ]);
+    expect(ws.rowCount).toBe(3); // header + new + in process
+    expect((ws.getRow(2).values as unknown[])[6]).toBe("New one"); // new first
+    expect((ws.getRow(2).values as unknown[])[8]).toBe("New");
+    expect((ws.getRow(3).values as unknown[])[6]).toBe("In process one");
+    expect((ws.getRow(3).values as unknown[])[8]).toBe("In process");
+  });
+
+  it("a complaint that moves to in process disappears from the next NEW Excel", async () => {
     const c1 = await asUser("c1@iitrpr.ac.in");
     await student(1, "satluj");
     const a = await complain(1, "Electrical");
-    expect((await workbook(await caretaker.export(c1, "xlsx"))).getWorksheet("Electrical")!.rowCount).toBe(2);
+    const newExcel = async () => (await workbook(await caretaker.export(c1, "xlsx", undefined, "new"))).getWorksheet("Electrical")!.rowCount;
+    expect(await newExcel()).toBe(2);
     await caretaker.updateStatus(c1, a.id, "InProgress");
-    expect((await workbook(await caretaker.export(c1, "xlsx"))).getWorksheet("Electrical")!.rowCount).toBe(1);
+    expect(await newExcel()).toBe(1);
   });
 
   it("a category page's Excel has only that category (one sheet) and says so in the file name", async () => {
@@ -224,8 +247,8 @@ describe("Caretaker complaints: Excel download", () => {
     await complain(1, "Plumbing", "Tap leaks");
     await complain(1, "Electrical", "Fan broken");
 
-    const f = await caretaker.export(c1, "xlsx", "Electrical");
-    expect(f.filename).toMatch(/^complaints-satluj-electrical-\d{4}-\d{2}-\d{2}\.xlsx$/);
+    const f = await caretaker.export(c1, "xlsx", "Electrical", "new");
+    expect(f.filename).toMatch(/^new-complaints-satluj-electrical-\d{4}-\d{2}-\d{2}\.xlsx$/);
     const wb = await workbook(f);
     expect(wb.worksheets.map((w) => w.name)).toEqual(["Electrical"]);
     expect(wb.getWorksheet("Electrical")!.rowCount).toBe(2);
@@ -285,9 +308,12 @@ describe("Caretaker complaints: CSV and PDF with categories and the 2-day rule",
     expect(csv).not.toContain("Long gone");
     expect(csv).toContain("Still here");
 
+    // The PDF has one page per category (empty categories say "No complaints."), so the page count is fixed.
     const pdf = await caretaker.export(c1, "pdf");
-    const pages = String.fromCharCode(...(pdf.body as Uint8Array)).match(/\/Type \/Page /g) ?? [];
-    expect(pages).toHaveLength(1);
+    const raw = String.fromCharCode(...(pdf.body as Uint8Array));
+    expect(raw.match(/\/Type\s*\/Page(?![A-Za-z])/g) ?? []).toHaveLength(COMPLAINT_CATEGORIES.length);
+    expect(raw).toContain("Still here");
+    expect(raw).not.toContain("Long gone");
   });
 });
 

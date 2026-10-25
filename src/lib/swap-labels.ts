@@ -7,7 +7,7 @@ const LABELS: Record<string, string> = {
   AwaitingRoom: "Accepted · waiting for a room",
   RoomAssigned: "Room assigned",
   Rejected: "Rejected",
-  Waiting: "On the waiting list",
+  Waiting: "Accepted · on the waiting list for a room",
 };
 
 export function swapStatusLabel(status: string): string {
