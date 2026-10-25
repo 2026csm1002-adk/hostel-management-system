@@ -121,6 +121,7 @@ export type StaffSwapDTO = SwapDTO & {
   email: string; // so staff can contact the student
   mobileNo: string; // "" when not saved
   attachmentUrl: string | null; // Google Drive link of the student's document (null: no document, or a dev file)
+  caretakerComment: string | null; // the note the caretaker wrote when forwarding the request to the warden
 };
 
 // ---- Warden -----------------------------------------------------------------

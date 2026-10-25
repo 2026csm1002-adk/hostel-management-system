@@ -19,6 +19,7 @@ type Row = {
   statusLabel?: string; // wording shown to the student when it differs from the stored status
   open: boolean;
   sortKey: string; // newest first; cleaning uses its booking time, so upcoming bookings come first
+  rank?: number; // breaks a tie in sortKey: a re-registered complaint shares its date with the old one and goes first
   notes: string[];
   attachment?: { name: string; url: string | null };
   reregisterId?: string;
@@ -51,6 +52,7 @@ function buildRows(c: CleaningBookingDTO[], q: ComplaintDTO[], s: SwapDTO[]): Ro
       status: x.status,
       open: x.status !== "Resolved",
       sortKey: x.createdAt,
+      rank: x.reregisteredFrom ? 1 : 0,
       notes: [
         ...(x.reregisteredFrom ? [`Re-registered from ${shortId(x.reregisteredFrom)} after no response within a week.`] : []),
         ...(x.reregistered ? ["Re-registered — see the newer ticket."] : []),
@@ -75,7 +77,7 @@ function buildRows(c: CleaningBookingDTO[], q: ComplaintDTO[], s: SwapDTO[]): Ro
       attachment: x.attachmentName ? { name: x.attachmentName, url: x.attachmentUrl } : undefined,
     })),
   ];
-  return rows.sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+  return rows.sort((a, b) => b.sortKey.localeCompare(a.sortKey) || (b.rank ?? 0) - (a.rank ?? 0));
 }
 
 type Loaded = { key: string; rows: Row[]; error: string | null };

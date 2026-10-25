@@ -13,6 +13,9 @@ import { profileService } from "@/server/services/profile.service";
 import { fileStorage } from "@/server/storage/file-storage.client";
 import type { SessionUser, StaffSwapDTO, SwapDTO, SwapStatsDTO, SwapStatus } from "@/types";
 
+/** A request is finished once it is rejected or a room is assigned; every other status is still open. */
+const FINISHED: SwapStatus[] = ["Rejected", "RoomAssigned"];
+
 function checkFile(file: File) {
   if (file.size > MAX_ATTACHMENT_BYTES) {
     throw new ValidationError(`The file is too large (maximum ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MB).`);
@@ -43,6 +46,7 @@ async function toStaffDTO({ swap, student }: SwapWithStudent): Promise<StaffSwap
   return {
     ...(await toDTO(swap)),
     wardenComment: notesFor(swap.wardenComment, "Warden"), // the caretaker's messages to the student are not shown to the warden
+    caretakerComment: swap.caretakerComment ?? null, // the caretaker's note sent along when forwarding: the warden must see it
     studentName: student.fullName,
     wing: student.wing,
     roomNo: student.roomNo,
@@ -76,6 +80,14 @@ export const swapService = {
     driveAccessToken?: string | null,
   ): Promise<SwapDTO> {
     const student = await profileService.requireProfile(email);
+
+    // One request at a time: a new one is allowed only when the previous one was rejected or got its room.
+    const mine = await swapRequestRepo.listByStudent(student.studentId);
+    if (mine.some((s) => !FINISHED.includes(s.status as SwapStatus))) {
+      throw new ConflictError(
+        "You already have a room swap request in progress. You can send a new one after it is rejected or a room is assigned.",
+      );
+    }
 
     let attachmentId: string | null = null;
     if (file && file.size > 0) {
@@ -127,15 +139,14 @@ export const swapService = {
   async decide(user: SessionUser, swapId: string, input: DecisionInput): Promise<StaffSwapDTO> {
     const { swap, student } = await loadForWarden(user, swapId);
     mustBe(swap.status, ["Forwarded"], "decided now");
-    // A rejection closes the request: its messages are wiped (the status stays, so the student still sees the outcome).
+    // The warden's comment is saved for both decisions, so the student can read why (or what to do next).
+    // A rejection also drops the caretaker's note to the warden: it has done its job.
+    const wardenComment = input.comment ? addNote(swap.wardenComment, "Warden", input.comment) : swap.wardenComment;
     const updated = await swapRequestRepo.update(
       swapId,
       input.decision === "Reject"
-        ? { status: "Rejected", wardenComment: null, caretakerComment: null }
-        : {
-            status: "Accepted",
-            wardenComment: input.comment ? addNote(swap.wardenComment, "Warden", input.comment) : swap.wardenComment,
-          },
+        ? { status: "Rejected", wardenComment, caretakerComment: null }
+        : { status: "Accepted", wardenComment },
     );
     return toStaffDTO({ swap: updated!, student });
   },

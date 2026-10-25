@@ -21,20 +21,27 @@ function toDTO(row: ComplaintRow, reregistered: boolean): ComplaintDTO {
     status: row.status as ComplaintStatus,
     createdAt: row.createdAt,
     daysOld: days,
-    canReregister: row.status !== "Resolved" && days >= REREGISTER_AFTER_DAYS && !reregistered,
+    // A ticket that is itself a re-registration keeps the old date, so it would look "7 days old" at once:
+    // it cannot be re-registered again.
+    canReregister: row.status !== "Resolved" && days >= REREGISTER_AFTER_DAYS && !reregistered && !row.reregisteredFrom,
     reregisteredFrom: row.reregisteredFrom,
     reregistered,
   };
 }
 
-function newComplaint(studentId: string, input: CreateComplaintInput, from: string | null): ComplaintRow {
+function newComplaint(
+  studentId: string,
+  input: CreateComplaintInput,
+  from: string | null,
+  createdAt: string = new Date().toISOString(),
+): ComplaintRow {
   return {
     complaintId: randomUUID(),
     studentId,
     category: input.category,
     description: input.description,
     status: "Open",
-    createdAt: new Date().toISOString(),
+    createdAt,
     resolvedAt: null,
     reregisteredFrom: from,
   };
@@ -85,7 +92,10 @@ export const complaintService = {
     return toDTO(resolved, false);
   },
 
-  /** Not resolved, at least 7 days old, and not already re-registered. */
+  /**
+   * Not resolved, at least 7 days old, and not already re-registered. The new ticket is a fresh complaint
+   * (status Open) but keeps the ORIGINAL date, so it still shows how long the problem has been waiting.
+   */
   async reregister(email: string, complaintId: string): Promise<ComplaintDTO> {
     const student = await profileService.requireProfile(email);
     const old = await complaintRepo.findById(complaintId);
@@ -99,11 +109,16 @@ export const complaintService = {
       throw new ConflictError("This complaint was already re-registered.");
     }
 
+    if (old.reregisteredFrom) {
+      throw new ConflictError("This ticket is already a re-registered one, so it cannot be re-registered again.");
+    }
+
     const row = await complaintRepo.insert(
       newComplaint(
         student.studentId,
         { category: old.category as ComplaintCategory, description: old.description },
         old.complaintId,
+        old.createdAt, // the back date
       ),
     );
     return toDTO(row, false);

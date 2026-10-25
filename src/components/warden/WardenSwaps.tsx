@@ -10,6 +10,7 @@ const btnSm = "rounded-[3px] border border-line-strong bg-white px-2.5 py-1 text
 function SwapTicket({ s, onDone }: { s: StaffSwapDTO; onDone: () => void }) {
   const actionable = s.status === "Forwarded"; // after the decision the warden is done; the caretaker assigns the room
   const notes = [
+    ...(s.caretakerComment ? [`Note from caretaker · ${s.caretakerComment}`] : []),
     ...(s.wardenComment ? s.wardenComment.split("\n").map((l) => `Message to student · ${l}`) : []),
     ...(s.status === "Accepted" ? ["Accepted. The caretaker will assign a room."] : []),
     ...(s.status === "AwaitingRoom" ? ["Accepted. The caretaker is waiting for a free room."] : []),

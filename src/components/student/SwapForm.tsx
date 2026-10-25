@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ALLOWED_ATTACHMENT_TYPES,
   MAX_ATTACHMENT_BYTES,
@@ -8,6 +8,10 @@ import {
   SWAP_REASON_MIN_CHARS,
 } from "@/lib/constants";
 import { apiFetch, errorMessage } from "@/lib/api-client";
+import { swapStatusLabel } from "@/lib/swap-labels";
+import type { SwapDTO } from "@/types";
+
+const FINISHED = ["Rejected", "RoomAssigned"];
 
 export function SwapForm({ onCreated }: { onCreated: () => void }) {
   const [reason, setReason] = useState("");
@@ -15,6 +19,18 @@ export function SwapForm({ onCreated }: { onCreated: () => void }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  // undefined = still checking, null = nothing open (the form is shown), otherwise the open request
+  const [open, setOpen] = useState<SwapDTO | null | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch<{ swaps: SwapDTO[] }>("/api/swaps")
+      .then((r) => !cancelled && setOpen(r.swaps.find((s) => !FINISHED.includes(s.status)) ?? null))
+      .catch(() => !cancelled && setOpen(null)); // the server still refuses a second request
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function pickFile(f: File | null) {
     setMessage(null);
@@ -44,11 +60,28 @@ export function SwapForm({ onCreated }: { onCreated: () => void }) {
       if (fileInput.current) fileInput.current.value = "";
       setMessage({ ok: true, text: "Request submitted. Track it under My requests." });
       onCreated();
+      const r = await apiFetch<{ swaps: SwapDTO[] }>("/api/swaps");
+      setOpen(r.swaps.find((s) => !FINISHED.includes(s.status)) ?? null);
     } catch (e) {
       setMessage({ ok: false, text: errorMessage(e) });
     } finally {
       setBusy(false);
     }
+  }
+
+  if (open === undefined) return <p className="text-sm text-ink-soft">Checking your requests…</p>;
+
+  if (open) {
+    return (
+      <div className="rounded-[3px] border border-line-strong bg-paper p-4 text-[13px]">
+        <p className="mb-1 font-semibold">You already have a room swap request in progress.</p>
+        <p className="text-ink-soft">
+          Current status: <span className="font-semibold text-ink">{swapStatusLabel(open.status)}</span>. You can send a new
+          request after it is rejected or a room is assigned. Track it under My requests.
+        </p>
+        {message?.ok && <p role="status" className="mt-2 text-green">{message.text}</p>}
+      </div>
+    );
   }
 
   return (

@@ -176,6 +176,12 @@ describe("Integration: student services (in-memory store)", () => {
     expect((await complaintService.listMine(email(1)))[0].canReregister).toBe(true);
     const fresh = await complaintService.reregister(email(1), c.id);
     expect(fresh.reregisteredFrom).toBe(c.id);
+    expect(fresh.id).not.toBe(c.id); // a new ticket ...
+    expect(fresh.status).toBe("Open");
+    expect(fresh.createdAt).toBe(memory.complaints[0].createdAt); // ... with the old (back) date
+    expect(fresh.daysOld).toBeGreaterThanOrEqual(8);
+    expect(fresh.canReregister).toBe(false); // it is old already, but it cannot be re-registered again
+    await expect(complaintService.reregister(email(1), fresh.id)).rejects.toThrow(/already a re-registered/);
     await expect(complaintService.reregister(email(1), c.id)).rejects.toThrow(/already/);
 
     const list = await complaintService.listMine(email(1));
@@ -221,15 +227,50 @@ describe("Integration: student services (in-memory store)", () => {
     await profileService.upsertProfile(email(1), profile(1));
     const plain = await swapService.submit(email(1), { reason: "Need a quieter room" });
     expect(plain).toMatchObject({ status: "Pending", attachmentName: null, attachmentUrl: null });
+    memory.swapRequests[0].status = "Rejected"; // one request at a time: the next one needs the first to be finished
 
     const pdf = new File(["x"], "certificate.pdf", { type: "application/pdf" });
     const withFile = await swapService.submit(email(1), { reason: "Medical reason" }, pdf);
     expect(withFile.attachmentName).toBe("certificate.pdf");
     expect(withFile.attachmentUrl).toBeNull(); // no Drive in tests: the file gets a fake dev id, so there is no link
+    memory.swapRequests[1].status = "RoomAssigned";
 
     await expect(
       swapService.submit(email(1), { reason: "Medical reason" }, new File(["x"], "a.exe", { type: "application/x-msdownload" })),
     ).rejects.toThrow(/PDF, JPG or PNG/);
     expect(await swapService.listMine(email(1))).toHaveLength(2);
+  });
+
+  it("swap: only one open request at a time, until it is rejected or a room is assigned", async () => {
+    await profileService.upsertProfile(email(1), profile(1));
+    await profileService.upsertProfile(email(2), profile(2));
+    const first = await swapService.submit(email(1), { reason: "Need a quieter room" });
+
+    // every status except Rejected / RoomAssigned blocks a new request
+    for (const status of ["Pending", "Forwarded", "Accepted", "Waiting", "AwaitingRoom"]) {
+      memory.swapRequests[0].status = status;
+      await expect(swapService.submit(email(1), { reason: "Another reason" })).rejects.toThrow(/already have a room swap request/);
+    }
+    expect(await swapService.listMine(email(1))).toHaveLength(1);
+
+    // another student is not affected
+    await expect(swapService.submit(email(2), { reason: "My own reason" })).resolves.toMatchObject({ status: "Pending" });
+
+    // a rejected request, or one that got its room, lets the student ask again
+    for (const status of ["Rejected", "RoomAssigned"]) {
+      memory.swapRequests.find((s) => s.swapId === first.id)!.status = status;
+      const next = await swapService.submit(email(1), { reason: `Asking again after ${status}` });
+      expect(next.status).toBe("Pending");
+      memory.swapRequests.find((s) => s.swapId === next.id)!.status = "Rejected"; // finish it for the next round
+    }
+
+    // a refused request leaves nothing behind (no file uploaded, no row)
+    const count = memory.swapRequests.length;
+    memory.swapRequests.find((s) => s.swapId === first.id)!.status = "Pending";
+    await expect(
+      swapService.submit(email(1), { reason: "With a file" }, new File(["x"], "a.pdf", { type: "application/pdf" })),
+    ).rejects.toThrow(/already have a room swap request/);
+    expect(memory.swapRequests).toHaveLength(count);
+    expect(memory.attachments).toHaveLength(0);
   });
 });

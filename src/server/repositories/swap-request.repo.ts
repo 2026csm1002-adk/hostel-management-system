@@ -4,8 +4,6 @@ import { studentRepo } from "@/server/repositories/student.repo";
 
 export type SwapWithStudent = { swap: SwapRequestRow; student: StudentRow };
 
-const CLOSED = ["Rejected", "RoomAssigned"];
-
 // TEMPORARY: in-memory. DB SWAP: Drizzle queries on `swap_request`.
 
 export const swapRequestRepo = {
@@ -37,15 +35,18 @@ export const swapRequestRepo = {
   },
 
   /**
-   * A closed request (Rejected or RoomAssigned) keeps its status and room but loses every message
-   * (warden / caretaker notes and the caretaker's note to the warden), to save space. Also cleans up older rows.
-   * DB SWAP: update swap_request set warden_comment = null, caretaker_comment = null
-   *          where status in ('Rejected', 'RoomAssigned') and (warden_comment is not null or caretaker_comment is not null)
+   * Once a room is assigned the request keeps its status and room but loses every message, to save space.
+   * A REJECTED request keeps the warden's message (the student must be able to read why it was rejected) and
+   * only loses the caretaker's note to the warden. Also cleans up older rows.
+   * DB SWAP: update swap_request set warden_comment = null, caretaker_comment = null where status = 'RoomAssigned' ...;
+   *          update swap_request set caretaker_comment = null where status = 'Rejected' and caretaker_comment is not null
    */
   async clearMessagesOfClosed(): Promise<void> {
     for (const swap of memory.swapRequests) {
-      if (CLOSED.includes(swap.status) && (swap.wardenComment !== null || swap.caretakerComment !== null)) {
+      if (swap.status === "RoomAssigned" && (swap.wardenComment !== null || swap.caretakerComment !== null)) {
         swap.wardenComment = null;
+        swap.caretakerComment = null;
+      } else if (swap.status === "Rejected" && swap.caretakerComment) {
         swap.caretakerComment = null;
       }
     }
