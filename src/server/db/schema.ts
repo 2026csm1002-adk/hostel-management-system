@@ -53,6 +53,7 @@ export const student = sqliteTable(
     roomNo: text("room_no").notNull(),
     course: text("course").notNull(), // BTech, MTech, PhD, Other
     batch: text("batch").notNull(),
+    mobileNo: text("mobile_no"), // [NEW from ER Diagram]
   },
   (table) => [
     check(
@@ -149,6 +150,7 @@ export const swapRequest = sqliteTable(
     caretakerId: text("caretaker_id").references(() => staffUser.staffId),
     wardenId: text("warden_id").references(() => staffUser.staffId),
     wardenComment: text("warden_comment"),
+    caretakerComment: text("caretaker_comment"), // [NEW from ER Diagram]
     createdAt: text("created_at").notNull(),
   },
   (table) => [
