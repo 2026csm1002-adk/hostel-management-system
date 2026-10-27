@@ -1,79 +1,109 @@
 import { randomUUID } from "node:crypto";
 import { MAX_ROOMS_PER_SLOT } from "@/lib/constants";
-import { memory, type CleaningBookingRow } from "@/server/db/memory-store";
+import { db } from "@/server/db/client";
+import { cleaningBooking, student } from "@/server/db/schema";
+import { and, eq } from "drizzle-orm";
 
-// TEMPORARY: in-memory. DB SWAP: Drizzle queries on `cleaning_booking`.
+export type CleaningBookingRow = typeof cleaningBooking.$inferSelect;
+export type NewBooking = {
+  studentId: string;
+  hostelId: string;
+  slotGroup?: string;
+  floor: number;
+  roomNo: string;
+  bookingDate: string;
+  slotStart: string;
+};
 
-export type NewBooking = Omit<CleaningBookingRow, "bookingId" | "seat" | "status">;
-
-/** Why a booking was not made: the slot is full, or the student already holds a slot that day. */
 export type InsertResult =
   | { ok: true; row: CleaningBookingRow }
   | { ok: false; reason: "slot-full" | "student-has-booking" };
 
 export const cleaningBookingRepo = {
   /**
-   * All bookings of one floor of one slot group on one date (every slot).
-   * The slot group is the wing (SE, SW, ...) or "ALL" for T6, see slotGroupOf in hostels.ts.
+   * All bookings of one floor on one date (wing filtered via student wing for group isolation).
    */
-  async listForDay(hostelId: string, slotGroup: string, floor: number, date: string): Promise<CleaningBookingRow[]> {
-    return memory.cleaningBookings
-      .filter(
-        (b) =>
-          b.hostelId === hostelId && b.slotGroup === slotGroup && b.floor === floor && b.bookingDate === date,
-      )
-      .map((b) => ({ ...b }));
+  async listForDay(
+    hostelId: string,
+    slotGroup: string,
+    floor: number,
+    date: string,
+  ): Promise<CleaningBookingRow[]> {
+    const rows = await db
+      .select({
+        booking: cleaningBooking,
+        wing: student.wing,
+      })
+      .from(cleaningBooking)
+      .innerJoin(student, eq(cleaningBooking.studentId, student.studentId))
+      .where(
+        and(
+          eq(cleaningBooking.hostelId, hostelId),
+          eq(cleaningBooking.floor, floor),
+          eq(cleaningBooking.bookingDate, date),
+        ),
+      );
+
+    return rows
+      .filter((r) => slotGroup === "ALL" || r.wing === slotGroup)
+      .map((r) => r.booking);
   },
 
-  /** A booking for this exact room in this slot, if any. */
   async findByRoomAndSlot(
     hostelId: string,
     roomNo: string,
     date: string,
     slotStart: string,
   ): Promise<CleaningBookingRow | undefined> {
-    const row = memory.cleaningBookings.find(
-      (b) =>
-        b.hostelId === hostelId &&
-        b.roomNo === roomNo &&
-        b.bookingDate === date &&
-        b.slotStart === slotStart,
-    );
-    return row && { ...row };
+    const [row] = await db
+      .select()
+      .from(cleaningBooking)
+      .where(
+        and(
+          eq(cleaningBooking.hostelId, hostelId),
+          eq(cleaningBooking.roomNo, roomNo),
+          eq(cleaningBooking.bookingDate, date),
+          eq(cleaningBooking.slotStart, slotStart),
+        ),
+      )
+      .limit(1);
+    return row;
   },
 
-  /** The booking this student already holds on this date (a student may hold only one per day). */
   async findByStudentAndDate(studentId: string, date: string): Promise<CleaningBookingRow | undefined> {
-    const row = memory.cleaningBookings.find((b) => b.studentId === studentId && b.bookingDate === date);
-    return row && { ...row };
+    const [row] = await db
+      .select()
+      .from(cleaningBooking)
+      .where(
+        and(
+          eq(cleaningBooking.studentId, studentId),
+          eq(cleaningBooking.bookingDate, date),
+        ),
+      )
+      .limit(1);
+    return row;
   },
 
-  /**
-   * One booking per student per day, then takes the lowest free seat (1..3) and inserts.
-   * Fails with "student-has-booking" or "slot-full".
-   * The in-memory version has no `await` between the check and the push, so two
-   * requests can never take the same seat.
-   * DB SWAP: do this inside a transaction and rely on
-   * UNIQUE(hostel_id, slot_group, floor, booking_date, slot_start, seat); if the insert hits
-   * that rule, try the next seat, and report "slot-full" when none is left. Also add
-   * UNIQUE(student_id, booking_date): a hit on it means "student-has-booking".
-   */
   async insertWithLowestFreeSeat(input: NewBooking): Promise<InsertResult> {
-    if (memory.cleaningBookings.some((b) => b.studentId === input.studentId && b.bookingDate === input.bookingDate)) {
+    // Check if student already booked for this date
+    const existing = await this.findByStudentAndDate(input.studentId, input.bookingDate);
+    if (existing) {
       return { ok: false, reason: "student-has-booking" };
     }
-    const taken = new Set(
-      memory.cleaningBookings
-        .filter(
-          (b) =>
-            b.hostelId === input.hostelId &&
-            b.slotGroup === input.slotGroup &&
-            b.floor === input.floor &&
-            b.bookingDate === input.bookingDate &&
-            b.slotStart === input.slotStart,
-        )
-        .map((b) => b.seat),
-    );
+
+    const takenSeats = await db
+      .select({ seat: cleaningBooking.seat })
+      .from(cleaningBooking)
+      .where(
+        and(
+          eq(cleaningBooking.hostelId, input.hostelId),
+          eq(cleaningBooking.floor, input.floor),
+          eq(cleaningBooking.bookingDate, input.bookingDate),
+          eq(cleaningBooking.slotStart, input.slotStart),
+        ),
+      );
+
+    const taken = new Set(takenSeats.map((b) => b.seat));
     let seat = 0;
     for (let s = 1; s <= MAX_ROOMS_PER_SLOT; s++) {
       if (!taken.has(s)) {
@@ -83,12 +113,32 @@ export const cleaningBookingRepo = {
     }
     if (seat === 0) return { ok: false, reason: "slot-full" };
 
-    const row: CleaningBookingRow = { ...input, bookingId: randomUUID(), seat, status: "Confirmed" };
-    memory.cleaningBookings.push(row);
-    return { ok: true, row: { ...row } };
+    try {
+      const [row] = await db
+        .insert(cleaningBooking)
+        .values({
+          bookingId: randomUUID(),
+          studentId: input.studentId,
+          hostelId: input.hostelId,
+          floor: input.floor,
+          roomNo: input.roomNo,
+          bookingDate: input.bookingDate,
+          slotStart: input.slotStart,
+          seat,
+          status: "Confirmed",
+        })
+        .returning();
+
+      return { ok: true, row };
+    } catch {
+      return { ok: false, reason: "slot-full" };
+    }
   },
 
   async listByStudent(studentId: string): Promise<CleaningBookingRow[]> {
-    return memory.cleaningBookings.filter((b) => b.studentId === studentId).map((b) => ({ ...b }));
+    return db
+      .select()
+      .from(cleaningBooking)
+      .where(eq(cleaningBooking.studentId, studentId));
   },
 };

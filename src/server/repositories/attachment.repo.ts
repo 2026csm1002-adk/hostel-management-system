@@ -1,14 +1,22 @@
-import { memory, type AttachmentRow } from "@/server/db/memory-store";
+import { db } from "@/server/db/client";
+import { attachment } from "@/server/db/schema";
+import { eq } from "drizzle-orm";
 
-// TEMPORARY: in-memory. DB SWAP: Drizzle queries on `attachment`.
+export type AttachmentRow = typeof attachment.$inferSelect;
+export type NewAttachmentRow = typeof attachment.$inferInsert;
 
 export const attachmentRepo = {
-  async insert(row: AttachmentRow): Promise<AttachmentRow> {
-    memory.attachments.push({ ...row });
-    return { ...row };
+  async insert(row: NewAttachmentRow): Promise<AttachmentRow> {
+    const [inserted] = await db.insert(attachment).values(row).returning();
+    return inserted;
   },
+
   async findById(attachmentId: string): Promise<AttachmentRow | undefined> {
-    const row = memory.attachments.find((a) => a.attachmentId === attachmentId);
-    return row && { ...row };
+    const [row] = await db
+      .select()
+      .from(attachment)
+      .where(eq(attachment.attachmentId, attachmentId))
+      .limit(1);
+    return row;
   },
 };

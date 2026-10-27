@@ -1,22 +1,22 @@
-import { memory, type CleaningBookingRow } from "@/server/db/memory-store";
+import { db } from "@/server/db/client";
+import { cleaningBooking } from "@/server/db/schema";
+import { and, gte, lte, eq } from "drizzle-orm";
 
-// TEMPORARY: in-memory. DB SWAP: Drizzle query on `cleaning_booking`.
-// Supervisor-only reads, kept apart from the student's cleaning-booking.repo.ts.
+export type CleaningBookingRow = typeof cleaningBooking.$inferSelect;
 
 export const supervisorBoardRepo = {
-  /**
-   * Every booking from `fromDate` to `toDate` (inclusive), for one hostel or, without hostelId,
-   * for all hostels. Each row carries its slotGroup (wing, or "ALL" for T6).
-   * DB SWAP: WHERE booking_date BETWEEN ... [AND hostel_id = ...].
-   */
   async listForRange(fromDate: string, toDate: string, hostelId?: string): Promise<CleaningBookingRow[]> {
-    return memory.cleaningBookings
-      .filter(
-        (b) =>
-          b.bookingDate >= fromDate &&
-          b.bookingDate <= toDate &&
-          (hostelId === undefined || b.hostelId === hostelId),
-      )
-      .map((b) => ({ ...b }));
+    const conditions = [
+      gte(cleaningBooking.bookingDate, fromDate),
+      lte(cleaningBooking.bookingDate, toDate),
+    ];
+    if (hostelId !== undefined) {
+      conditions.push(eq(cleaningBooking.hostelId, hostelId));
+    }
+
+    return db
+      .select()
+      .from(cleaningBooking)
+      .where(and(...conditions));
   },
 };
