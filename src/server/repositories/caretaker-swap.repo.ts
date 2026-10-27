@@ -1,22 +1,18 @@
-import { memory } from "@/server/db/memory-store";
-import { studentRepo } from "@/server/repositories/student.repo";
+import { db } from "@/server/db/client";
+import { student, swapRequest } from "@/server/db/schema";
 import type { SwapWithStudent } from "@/server/repositories/swap-request.repo";
-
-// The swap queries a caretaker needs. Students are looked up through studentRepo, so this works
-// whether the students are in the database or in memory.
-// Changing a request goes through swapRequestRepo.update(), as for the warden.
+import { desc, eq } from "drizzle-orm";
 
 export const caretakerSwapRepo = {
-  /**
-   * Swap requests of the students living in one hostel (every wing), newest first.
-   * DB SWAP: join swap_request -> student on student_id, where student.hostel_id = ?, order by created_at desc.
-   */
   async listByHostel(hostelId: string): Promise<SwapWithStudent[]> {
-    const out: SwapWithStudent[] = [];
-    for (const swap of memory.swapRequests) {
-      const student = await studentRepo.findById(swap.studentId);
-      if (student && student.hostelId === hostelId) out.push({ swap: { ...swap }, student });
-    }
-    return out.sort((a, b) => b.swap.createdAt.localeCompare(a.swap.createdAt));
+    return db
+      .select({
+        swap: swapRequest,
+        student,
+      })
+      .from(swapRequest)
+      .innerJoin(student, eq(swapRequest.studentId, student.studentId))
+      .where(eq(student.hostelId, hostelId))
+      .orderBy(desc(swapRequest.createdAt));
   },
 };

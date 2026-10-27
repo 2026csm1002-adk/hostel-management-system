@@ -1,85 +1,97 @@
-import { memory } from "@/server/db/memory-store";
-import type { StudentRow, SwapRequestRow } from "@/server/db/memory-store";
-import { studentRepo } from "@/server/repositories/student.repo";
+import { db } from "@/server/db/client";
+import { student, swapRequest } from "@/server/db/schema";
+import { and, desc, eq, isNotNull, or } from "drizzle-orm";
 
+export type SwapRequestRow = typeof swapRequest.$inferSelect;
+export type StudentRow = typeof student.$inferSelect;
 export type SwapWithStudent = { swap: SwapRequestRow; student: StudentRow };
 
-// TEMPORARY: in-memory. DB SWAP: Drizzle queries on `swap_request`.
-
 export const swapRequestRepo = {
-  async insert(row: SwapRequestRow): Promise<SwapRequestRow> {
-    memory.swapRequests.push({ ...row });
-    return { ...row };
-  },
-  async findById(swapId: string): Promise<SwapRequestRow | undefined> {
-    const row = memory.swapRequests.find((s) => s.swapId === swapId);
-    return row && { ...row };
-  },
-  /** Newest first. */
-  async listByStudent(studentId: string): Promise<SwapRequestRow[]> {
-    return memory.swapRequests
-      .filter((s) => s.studentId === studentId)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .map((s) => ({ ...s }));
+  async insert(row: typeof swapRequest.$inferInsert): Promise<SwapRequestRow> {
+    const [inserted] = await db.insert(swapRequest).values(row).returning();
+    return inserted;
   },
 
-  /** DB SWAP: update(swapRequest).set(patch).where(eq(swapId, id)).returning() */
+  async findById(swapId: string): Promise<SwapRequestRow | undefined> {
+    const [row] = await db
+      .select()
+      .from(swapRequest)
+      .where(eq(swapRequest.swapId, swapId))
+      .limit(1);
+    return row;
+  },
+
+  async listByStudent(studentId: string): Promise<SwapRequestRow[]> {
+    return db
+      .select()
+      .from(swapRequest)
+      .where(eq(swapRequest.studentId, studentId))
+      .orderBy(desc(swapRequest.createdAt));
+  },
+
   async update(
     swapId: string,
     patch: Partial<Omit<SwapRequestRow, "swapId" | "studentId">>,
   ): Promise<SwapRequestRow | undefined> {
-    const row = memory.swapRequests.find((s) => s.swapId === swapId);
-    if (!row) return undefined;
-    Object.assign(row, patch);
-    return { ...row };
+    const [updated] = await db
+      .update(swapRequest)
+      .set(patch)
+      .where(eq(swapRequest.swapId, swapId))
+      .returning();
+    return updated;
   },
 
-  /**
-   * Once a room is assigned the request keeps its status and room but loses every message, to save space.
-   * A REJECTED request keeps the warden's message (the student must be able to read why it was rejected) and
-   * only loses the caretaker's note to the warden. Also cleans up older rows.
-   * DB SWAP: update swap_request set warden_comment = null, caretaker_comment = null where status = 'RoomAssigned' ...;
-   *          update swap_request set caretaker_comment = null where status = 'Rejected' and caretaker_comment is not null
-   */
   async clearMessagesOfClosed(): Promise<void> {
-    for (const swap of memory.swapRequests) {
-      if (swap.status === "RoomAssigned" && (swap.wardenComment !== null || swap.caretakerComment !== null)) {
-        swap.wardenComment = null;
-        swap.caretakerComment = null;
-      } else if (swap.status === "Rejected" && swap.caretakerComment) {
-        swap.caretakerComment = null;
-      }
-    }
+    await db
+      .update(swapRequest)
+      .set({ wardenComment: null, caretakerComment: null })
+      .where(
+        and(
+          eq(swapRequest.status, "RoomAssigned"),
+          or(isNotNull(swapRequest.wardenComment), isNotNull(swapRequest.caretakerComment)),
+        ),
+      );
+
+    await db
+      .update(swapRequest)
+      .set({ caretakerComment: null })
+      .where(
+        and(
+          eq(swapRequest.status, "Rejected"),
+          isNotNull(swapRequest.caretakerComment),
+        ),
+      );
   },
 
-  /**
-   * Swap requests forwarded to one warden, newest first.
-   * DB SWAP: join swap_request -> student on student_id, where swap_request.warden_id = ?
-   */
   async listByWarden(wardenId: string): Promise<SwapWithStudent[]> {
-    const out: SwapWithStudent[] = [];
-    for (const swap of memory.swapRequests) {
-      if (swap.wardenId !== wardenId) continue;
-      const student = await studentRepo.findById(swap.studentId); // students are in the real database
-      if (student) out.push({ swap: { ...swap }, student });
-    }
-    return out.sort((a, b) => b.swap.createdAt.localeCompare(a.swap.createdAt));
+    return db
+      .select({
+        swap: swapRequest,
+        student,
+      })
+      .from(swapRequest)
+      .innerJoin(student, eq(swapRequest.studentId, student.studentId))
+      .where(eq(swapRequest.wardenId, wardenId))
+      .orderBy(desc(swapRequest.createdAt));
   },
 
-  /**
-   * How many swap requests the students of one hostel made, per batch and per course.
-   * Returns numbers only, never names or ids.
-   * DB SWAP: two GROUP BY queries (student.batch, student.course) over swap_request joined to student,
-   *          where student.hostel_id = ?
-   */
-  async countsByBatchAndCourse(hostelId: string): Promise<{ byBatch: Map<string, number>; byCourse: Map<string, number> }> {
+  async countsByBatchAndCourse(
+    hostelId: string,
+  ): Promise<{ byBatch: Map<string, number>; byCourse: Map<string, number> }> {
+    const rows = await db
+      .select({
+        batch: student.batch,
+        course: student.course,
+      })
+      .from(swapRequest)
+      .innerJoin(student, eq(swapRequest.studentId, student.studentId))
+      .where(eq(student.hostelId, hostelId));
+
     const byBatch = new Map<string, number>();
     const byCourse = new Map<string, number>();
-    for (const swap of memory.swapRequests) {
-      const student = await studentRepo.findById(swap.studentId); // students are in the real database
-      if (!student || student.hostelId !== hostelId) continue;
-      byBatch.set(student.batch, (byBatch.get(student.batch) ?? 0) + 1);
-      byCourse.set(student.course, (byCourse.get(student.course) ?? 0) + 1);
+    for (const r of rows) {
+      byBatch.set(r.batch, (byBatch.get(r.batch) ?? 0) + 1);
+      byCourse.set(r.course, (byCourse.get(r.course) ?? 0) + 1);
     }
     return { byBatch, byCourse };
   },
