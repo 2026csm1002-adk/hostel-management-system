@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { auth } from "@/auth";
 import { AppError, UnauthorizedError } from "@/server/errors";
+import { staffUserRepo } from "@/server/repositories/staff-user.repo";
 import { requireRole } from "@/server/services/auth.service";
 import type { Role, SessionUser } from "@/types";
 
@@ -10,12 +11,18 @@ export async function requireUser(allowed: Role[]): Promise<SessionUser> {
   const session = await auth();
   const u = session?.user;
   if (!u?.email) throw new UnauthorizedError();
-  const user: SessionUser = {
-    email: u.email.trim().toLowerCase(),
-    role: u.role,
-    userId: u.userId ?? null,
-    hostelId: u.hostelId ?? null,
-  };
+  const email = u.email.trim().toLowerCase();
+  const user: SessionUser = { email, role: u.role, userId: u.userId ?? null, hostelId: u.hostelId ?? null };
+  // The login cookie can be older than the staff table (staff ids change when the staff list moves to the database),
+  // and an old id breaks foreign keys such as swap_request.caretaker_id. So for staff, take the id and hostel
+  // from the staff table on every request instead of trusting the cookie.
+  if (user.role !== "Student") {
+    const staff = await staffUserRepo.findByEmail(email);
+    if (staff) {
+      user.userId = staff.staffId;
+      user.hostelId = staff.hostelId ?? null;
+    }
+  }
   requireRole(user, allowed);
   return user;
 }
