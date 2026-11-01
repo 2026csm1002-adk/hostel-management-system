@@ -48,6 +48,7 @@ export type SlotAvailability = {
   capacity: number;
   status: "Available" | "Full";
   bookedByMe: boolean; // my room already holds a seat in this slot
+  dayBooked: boolean;
 };
 
 export type CleaningBookingDTO = {
@@ -81,6 +82,7 @@ export type SwapDTO = {
   status: SwapStatus;
   createdAt: string;
   attachmentName: string | null;
+  attachmentUrl: string | null;
   assignedRoom: string | null;
   wardenComment: string | null;
 };
@@ -120,7 +122,6 @@ export type StaffSwapDTO = SwapDTO & {
   course: Course;
   email: string; // so staff can contact the student
   mobileNo: string; // "" when not saved
-  attachmentUrl: string | null; // Google Drive link of the student's document (null: no document, or a dev file)
   caretakerComment: string | null; // the note the caretaker wrote when forwarding the request to the warden
 };
 

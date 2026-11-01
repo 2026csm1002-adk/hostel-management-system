@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionTabs } from "@/components/layout/SectionTabs";
@@ -11,29 +12,43 @@ const ACCENTS = {
 
 type Props = {
   email: string;
-  roleLabel: string;                 // "Caretaker"
+  roleLabel: string;
   accent: keyof typeof ACCENTS;
   title: string;
   subtitle: string;
-  chipText: string;                  // e.g. "Caretaker · Satluj"
-  tabs?: { href: string; label: string }[];
-  children: React.ReactNode;
+  chipText: string;
+  tabs?: { href: string; label: ReactNode }[];
+  children: ReactNode;
 };
 
 /** The frame shared by the three staff areas: Navbar, page header with a role chip, optional tabs. */
-export function RoleLayout({ email, roleLabel, accent, title, subtitle, chipText, tabs, children }: Props) {
+export function RoleLayout({
+  email,
+  roleLabel,
+  accent,
+  title,
+  subtitle,
+  chipText,
+  tabs,
+  children,
+}: Props) {
   const a = ACCENTS[accent];
+
   return (
     <>
       <Navbar userEmail={email} roleLabel={roleLabel} tabColor={a.tab} />
       <main className="mx-auto max-w-[1140px] px-5 pb-20 pt-7">
         <PageHeader title={title} subtitle={subtitle}>
-          <span className={`inline-flex items-center gap-[7px] rounded-[3px] border px-2.5 py-1.5 font-mono text-xs font-semibold ${a.chip}`}>
+          <span
+            className={`inline-flex items-center gap-[7px] rounded-[3px] border px-2.5 py-1.5 font-mono text-xs font-semibold ${a.chip}`}
+          >
             <span className={`h-[7px] w-[7px] rounded-full ${a.dot}`} />
             {chipText}
           </span>
         </PageHeader>
+
         {tabs && <SectionTabs tabs={tabs} label={`${roleLabel} section`} />}
+
         {children}
       </main>
     </>

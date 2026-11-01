@@ -9,6 +9,7 @@ export type StaffComplaintDTO = {
   createdAt: string;
   daysOld: number;
   studentName: string;
+  email: string;
   mobileNo: string; // so the caretaker can call the student ("" when not saved)
   wing: string;
   roomNo: string;

@@ -1,17 +1,30 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-type Tab = { href: string; label: string };
+type Tab = {
+  href: string;
+  label: ReactNode;
+};
 
 /** Pill tabs under the page header. The tab whose path matches the current URL is highlighted. */
-export function SectionTabs({ tabs, label }: { tabs: Tab[]; label: string }) {
+export function SectionTabs({
+  tabs,
+  label,
+}: {
+  tabs: Tab[];
+  label: string;
+}) {
   const pathname = usePathname();
+
   return (
     <nav aria-label={label} className="mb-[22px] flex gap-1.5">
       {tabs.map((tab) => {
-        const active = pathname === tab.href || pathname.startsWith(tab.href + "/");
+        const active =
+          pathname === tab.href || pathname.startsWith(tab.href + "/");
+
         return (
           <Link
             key={tab.href}
