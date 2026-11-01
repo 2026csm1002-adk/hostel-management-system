@@ -1,35 +1,58 @@
 import { roomError } from "@/lib/room";
-import type { AssignRoomInput, ForwardInput } from "@/lib/validators/caretaker-swap.schema";
-import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/server/errors";
+import type {
+  AssignRoomInput,
+  ForwardInput,
+} from "@/lib/validators/caretaker-swap.schema";
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from "@/server/errors";
 import { attachmentRepo } from "@/server/repositories/attachment.repo";
 import { caretakerSwapRepo } from "@/server/repositories/caretaker-swap.repo";
 import { mobileRepo } from "@/server/repositories/mobile.repo";
 import { fileStorage } from "@/server/storage/file-storage.client";
 import { staffUserRepo } from "@/server/repositories/staff-user.repo";
 import { studentRepo } from "@/server/repositories/student.repo";
-import { swapRequestRepo, type SwapWithStudent } from "@/server/repositories/swap-request.repo";
+import {
+  swapRequestRepo,
+  type SwapWithStudent,
+} from "@/server/repositories/swap-request.repo";
 import { addNote, notesFor } from "@/server/swap-notes";
 import { requireHostel, requireRole } from "@/server/services/auth.service";
 import type { MessageInput } from "@/lib/validators/swap.schema";
-import type { SessionUser, StaffSwapDTO, SwapStatus } from "@/types";
+import type {
+  SessionUser,
+  StaffSwapDTO,
+  SwapStatus,
+} from "@/types";
 import type { CaretakerSwapDTO } from "@/types/caretaker";
 
-// Status flow:  Pending -> Forwarded -> Accepted / Rejected / Waiting (warden, in swap.service.ts)
-//               Accepted -> RoomAssigned, or Accepted -> AwaitingRoom -> RoomAssigned (caretaker, here)
+// Status flow: Pending -> Forwarded -> Accepted / Rejected / Waiting (warden, in swap.service.ts)
+//              Accepted -> RoomAssigned, or Accepted -> AwaitingRoom -> RoomAssigned (caretaker, here)
 // A caretaker only ever works on the requests of their own hostel, every wing of it.
 
-async function toDTO({ swap, student }: SwapWithStudent): Promise<CaretakerSwapDTO> {
-  const attachment = swap.attachmentId ? await attachmentRepo.findById(swap.attachmentId) : undefined;
+async function toDTO({
+  swap,
+  student,
+}: SwapWithStudent): Promise<CaretakerSwapDTO> {
+  const attachment = swap.attachmentId
+    ? await attachmentRepo.findById(swap.attachmentId)
+    : undefined;
+
   return {
     id: swap.swapId,
     reason: swap.reason,
     status: swap.status as SwapStatus,
     createdAt: swap.createdAt,
     attachmentName: attachment?.fileName ?? null,
-    attachmentUrl: attachment ? fileStorage.viewUrl(attachment.storageFileId) : null,
+    attachmentUrl: attachment
+      ? fileStorage.viewUrl(attachment.storageFileId)
+      : null,
     caretakerComment: swap.caretakerComment,
     assignedRoom: swap.assignedRoom,
-    wardenComment: notesFor(swap.wardenComment, "Caretaker"), // the warden's own messages are not shown to the caretaker
+    wardenComment: notesFor(swap.wardenComment, "Caretaker"),
     studentName: student.fullName,
     email: student.googleEmail,
     wing: student.wing,
@@ -43,17 +66,24 @@ async function toDTO({ swap, student }: SwapWithStudent): Promise<CaretakerSwapD
 /** Finds a request, but only if the student lives in the caretaker's hostel. */
 async function loadOwned(user: SessionUser, swapId: string) {
   requireRole(user, ["Caretaker"]);
+
   const hostelId = requireHostel(user);
   const swap = await swapRequestRepo.findById(swapId);
   const student = swap && (await studentRepo.findById(swap.studentId));
+
   // A request from another hostel looks the same as one that does not exist.
-  if (!swap || !student || student.hostelId !== hostelId) throw new NotFoundError("Swap request not found.");
+  if (!swap || !student || student.hostelId !== hostelId) {
+    throw new NotFoundError("Swap request not found.");
+  }
+
   return { swap, student, hostelId };
 }
 
 function mustBe(status: string, allowed: SwapStatus[], action: string) {
   if (!allowed.includes(status as SwapStatus)) {
-    throw new ConflictError(`This request is "${status}", so it cannot be ${action}.`);
+    throw new ConflictError(
+      `This request is "${status}", so it cannot be ${action}.`,
+    );
   }
 }
 
@@ -61,56 +91,144 @@ export const caretakerSwapService = {
   /** Requests of my hostel, newest first. */
   async list(user: SessionUser): Promise<CaretakerSwapDTO[]> {
     requireRole(user, ["Caretaker"]);
+
     await swapRequestRepo.clearMessagesOfClosed();
-    const rows = await caretakerSwapRepo.listByHostel(requireHostel(user));
+
+    const rows = await caretakerSwapRepo.listByHostel(
+      requireHostel(user),
+    );
+
     return Promise.all(rows.map(toDTO));
   },
 
+  /**
+   * Caretaker: send a message to the student while the request is Pending.
+   * The message is saved without changing the request status.
+   */
+  async message(
+    user: SessionUser,
+    swapId: string,
+    input: MessageInput,
+  ): Promise<CaretakerSwapDTO> {
+    const { swap, student } = await loadOwned(user, swapId);
+
+    mustBe(swap.status, ["Pending"], "messaged now");
+
+    const wardenComment = addNote(
+      swap.wardenComment,
+      "Caretaker",
+      input.message,
+    );
+
+    const updated = await swapRequestRepo.update(swapId, {
+      wardenComment,
+    });
+
+    if (!updated) {
+      throw new NotFoundError("Swap request not found.");
+    }
+
+    return toDTO({ swap: updated, student });
+  },
+
   /** Pending -> Forwarded, to the warden of this hostel, with an optional comment. */
-  async forward(user: SessionUser, swapId: string, input: ForwardInput = {}): Promise<CaretakerSwapDTO> {
+  async forward(
+    user: SessionUser,
+    swapId: string,
+    input: ForwardInput = {},
+  ): Promise<CaretakerSwapDTO> {
     const { swap, student, hostelId } = await loadOwned(user, swapId);
+
     mustBe(swap.status, ["Pending"], "forwarded");
-    if (!user.userId) throw new ForbiddenError("Your account has no staff id.");
+
+    if (!user.userId) {
+      throw new ForbiddenError("Your account has no staff id.");
+    }
 
     const warden = await staffUserRepo.findWardenOfHostel(hostelId);
-    if (!warden) throw new ValidationError("No warden is assigned to your hostel yet.");
+
+    if (!warden) {
+      throw new ValidationError(
+        "No warden is assigned to your hostel yet.",
+      );
+    }
 
     const updated = await swapRequestRepo.update(swapId, {
       status: "Forwarded",
       caretakerId: user.userId,
       wardenId: warden.staffId,
-      caretakerComment: input.comment ? input.comment : null, // optional note for the warden
+      caretakerComment: input.comment ? input.comment : null,
     });
-    return toDTO({ swap: updated!, student });
+
+    if (!updated) {
+      throw new NotFoundError("Swap request not found.");
+    }
+
+    return toDTO({ swap: updated, student });
   },
 
   /** Accepted -> Waiting: the warden said yes, but no room is free. A message for the student is required. */
-  async markWaiting(user: SessionUser, swapId: string, input: MessageInput): Promise<CaretakerSwapDTO> {
+  async markWaiting(
+    user: SessionUser,
+    swapId: string,
+    input: MessageInput,
+  ): Promise<CaretakerSwapDTO> {
     const { swap, student } = await loadOwned(user, swapId);
+
     mustBe(swap.status, ["Accepted", "AwaitingRoom"], "put on the waiting list");
+
     const updated = await swapRequestRepo.update(swapId, {
       status: "Waiting",
-      wardenComment: addNote(swap.wardenComment, "Caretaker", input.message),
+      wardenComment: addNote(
+        swap.wardenComment,
+        "Caretaker",
+        input.message,
+      ),
     });
-    return toDTO({ swap: updated!, student });
+
+    if (!updated) {
+      throw new NotFoundError("Swap request not found.");
+    }
+
+    return toDTO({ swap: updated, student });
   },
 
   /** Accepted -> AwaitingRoom: kept for older requests; the screen now uses markWaiting. */
-  async markAwaitingRoom(user: SessionUser, swapId: string): Promise<CaretakerSwapDTO> {
+  async markAwaitingRoom(
+    user: SessionUser,
+    swapId: string,
+  ): Promise<CaretakerSwapDTO> {
     const { swap, student } = await loadOwned(user, swapId);
+
     mustBe(swap.status, ["Accepted"], "marked as awaiting a room");
-    const updated = await swapRequestRepo.update(swapId, { status: "AwaitingRoom" });
-    return toDTO({ swap: updated!, student });
+
+    const updated = await swapRequestRepo.update(swapId, {
+      status: "AwaitingRoom",
+    });
+
+    if (!updated) {
+      throw new NotFoundError("Swap request not found.");
+    }
+
+    return toDTO({ swap: updated, student });
   },
 
   /** Accepted, AwaitingRoom or Waiting -> RoomAssigned. */
-  async assignRoom(user: SessionUser, swapId: string, input: AssignRoomInput): Promise<CaretakerSwapDTO> {
+  async assignRoom(
+    user: SessionUser,
+    swapId: string,
+    input: AssignRoomInput,
+  ): Promise<CaretakerSwapDTO> {
     const { swap, student } = await loadOwned(user, swapId);
+
     mustBe(swap.status, ["Accepted", "AwaitingRoom", "Waiting"], "given a room");
 
     // The new room must be a room that exists in this hostel's numbering (for example 001 or 105).
     const problem = roomError(student.hostelId, input.room);
-    if (problem) throw new ValidationError(problem);
+
+    if (problem) {
+      throw new ValidationError(problem);
+    }
 
     // The request is closed now: every message on it is wiped (the room and status stay).
     const updated = await swapRequestRepo.update(swapId, {
@@ -119,6 +237,11 @@ export const caretakerSwapService = {
       wardenComment: null,
       caretakerComment: null,
     });
-    return toDTO({ swap: updated!, student });
+
+    if (!updated) {
+      throw new NotFoundError("Swap request not found.");
+    }
+
+    return toDTO({ swap: updated, student });
   },
 };
