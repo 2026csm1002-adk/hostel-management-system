@@ -18,9 +18,17 @@ export async function getDriveAccessToken(req: Request): Promise<string | null> 
   const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
   if (!secret) return why("AUTH_SECRET is not set");
 
-  let jwt: Awaited<ReturnType<typeof getToken>>;
+  // On https (Vercel) Auth.js names the login cookie "__Secure-authjs.session-token", on http (localhost)
+  // "authjs.session-token", and the name is also the key the cookie is encrypted with. getToken() only guesses which
+  // one from environment variables (AUTH_URL, VERCEL), and a wrong guess reads as "not signed in". So say it
+  // explicitly: the address the browser used first, then the other one.
+  const proto = req.headers.get("x-forwarded-proto")?.split(",")[0].trim() ?? new URL(req.url).protocol.replace(":", "");
+  const secureFirst = proto === "https";
+
+  let jwt: Awaited<ReturnType<typeof getToken>> = null;
   try {
-    jwt = await getToken({ req, secret });
+    jwt = await getToken({ req, secret, secureCookie: secureFirst });
+    if (!jwt) jwt = await getToken({ req, secret, secureCookie: !secureFirst });
   } catch (e) {
     return why(`the login cookie could not be read (${e instanceof Error ? e.message : String(e)})`);
   }
