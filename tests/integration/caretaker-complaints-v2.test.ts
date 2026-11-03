@@ -1,61 +1,27 @@
-import { writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import ExcelJS from "exceljs";
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { COMPLAINT_CATEGORIES } from "@/lib/constants";
 import { wingsOf } from "@/lib/hostels";
 import { complaintExportQuerySchema } from "@/lib/validators/caretaker-complaint.schema";
-import {
-  memory,
-  resetMemoryStore,
-  type StudentRow,
-} from "@/server/db/memory-store";
+import { db } from "@/server/db/client";
+import { complaint } from "@/server/db/schema";
 import { mobileRepo } from "@/server/repositories/mobile.repo";
 import { studentRepo } from "@/server/repositories/student.repo";
 import { resolveRole } from "@/server/services/auth.service";
 import { caretakerComplaintService as caretaker } from "@/server/services/caretaker-complaint.service";
 import { complaintService } from "@/server/services/complaint.service";
 import type { SessionUser } from "@/types";
+import { resetDb } from "../helpers";
 
-// Same set-up as caretaker-complaints.test.ts: no database, students in a Map, complaints in the in-memory store.
-const students = new Map<string, StudentRow>();
-
-studentRepo.findById = async (id) => students.get(id);
-
-studentRepo.findByEmail = async (email) =>
-  [...students.values()].find((s) => s.googleEmail === email);
-
-const file = path.join(
-  tmpdir(),
-  `hms-caretaker-v2-${process.pid}.json`,
-);
-
-writeFileSync(
-  file,
-  JSON.stringify([
-    {
-      name: "C1",
-      email: "c1@iitrpr.ac.in",
-      role: "Caretaker",
-      hostel: "satluj",
-    },
-    {
-      name: "C2",
-      email: "c2@iitrpr.ac.in",
-      role: "Caretaker",
-      hostel: "beas",
-    },
-    {
-      name: "W1",
-      email: "w1@iitrpr.ac.in",
-      role: "Warden",
-      hostel: "satluj",
-    },
-  ]),
-);
-
-process.env.DEV_STAFF_FILE = file;
+// Everything runs against the throw-away test database (see tests/setup-test-db.ts):
+// the staff are rows of staff_user, the students and complaints are real rows.
+const STAFF = [
+  { name: "C1", email: "c1@iitrpr.ac.in", role: "Caretaker" as const, hostel: "satluj" },
+  { name: "C2", email: "c2@iitrpr.ac.in", role: "Caretaker" as const, hostel: "beas" },
+  { name: "W1", email: "w1@iitrpr.ac.in", role: "Warden" as const, hostel: "satluj" },
+];
+const reset = () => resetDb(STAFF);
 
 const email = (n: number) =>
   `2026csm10${String(n).padStart(2, "0")}@iitrpr.ac.in`;
@@ -75,7 +41,7 @@ async function student(
 ) {
   const studentId = `2026CSM10${String(n).padStart(2, "0")}`;
 
-  students.set(studentId, {
+  await studentRepo.upsert({
     studentId,
     fullName: `Student ${n}`,
     googleEmail: email(n),
@@ -84,7 +50,6 @@ async function student(
     roomNo: room,
     course: "MTech",
     batch: "2026",
-    mobileNo: null,
   });
 
   await mobileRepo.set(
@@ -104,8 +69,9 @@ const ago = (days: number) =>
     Date.now() - days * 24 * 60 * 60 * 1000,
   ).toISOString();
 
-const row = (id: string) =>
-  memory.complaints.find((c) => c.complaintId === id)!;
+/** Changes a stored complaint directly (to back-date it, for example). */
+const patch = (id: string, values: Partial<typeof complaint.$inferInsert>) =>
+  db.update(complaint).set(values).where(eq(complaint.complaintId, id));
 
 const text = (f: { body: string | Uint8Array }) =>
   typeof f.body === "string" ? f.body : "";
@@ -121,10 +87,7 @@ async function workbook(f: { body: string | Uint8Array }) {
 }
 
 describe("Caretaker complaints: card data", () => {
-  beforeEach(() => {
-    resetMemoryStore();
-    students.clear();
-  });
+  beforeEach(() => reset());
 
   it("each complaint carries the student's name, email, mobile, wing-room, category, reason and age", async () => {
     const c1 = await asUser("c1@iitrpr.ac.in");
@@ -149,10 +112,7 @@ describe("Caretaker complaints: card data", () => {
 });
 
 describe("Caretaker complaints: resolved ones vanish after 2 days", () => {
-  beforeEach(() => {
-    resetMemoryStore();
-    students.clear();
-  });
+  beforeEach(() => reset());
 
   it("a complaint resolved 3 days ago is gone, one resolved 1 day ago is still listed", async () => {
     const c1 = await asUser("c1@iitrpr.ac.in");
@@ -165,8 +125,8 @@ describe("Caretaker complaints: resolved ones vanish after 2 days", () => {
     await caretaker.updateStatus(c1, old.id, "Resolved");
     await caretaker.updateStatus(c1, fresh.id, "Resolved");
 
-    row(old.id).resolvedAt = ago(3);
-    row(fresh.id).resolvedAt = ago(1);
+    await patch(old.id, { resolvedAt: ago(3) });
+    await patch(fresh.id, { resolvedAt: ago(1) });
 
     expect(
       (await caretaker.list(c1)).map((c) => c.description),
@@ -184,9 +144,9 @@ describe("Caretaker complaints: resolved ones vanish after 2 days", () => {
 
     expect(await caretaker.list(c1)).toHaveLength(1);
 
-    row(a.id).resolvedAt = new Date(
+    await patch(a.id, { resolvedAt: new Date(
       Date.now() - (2 * 24 * 60 * 60 * 1000 + 60 * 1000),
-    ).toISOString();
+    ).toISOString() });
 
     expect(await caretaker.list(c1)).toHaveLength(0);
   });
@@ -200,7 +160,7 @@ describe("Caretaker complaints: resolved ones vanish after 2 days", () => {
 
     await caretaker.updateStatus(c1, made.id, "Resolved");
 
-    row(made.id).resolvedAt = ago(5);
+    await patch(made.id, { resolvedAt: ago(5) });
 
     expect(await caretaker.list(c1)).toHaveLength(0);
 
@@ -220,8 +180,8 @@ describe("Caretaker complaints: resolved ones vanish after 2 days", () => {
 
     await caretaker.updateStatus(c1, b.id, "InProgress");
 
-    row(a.id).createdAt = ago(60);
-    row(b.id).createdAt = ago(60);
+    await patch(a.id, { createdAt: ago(60) });
+    await patch(b.id, { createdAt: ago(60) });
 
     const list = await caretaker.list(c1);
 
@@ -238,8 +198,7 @@ describe("Caretaker complaints: resolved ones vanish after 2 days", () => {
 
     const a = await complain(1, "Plumbing");
 
-    row(a.id).status = "Resolved";
-    row(a.id).resolvedAt = null;
+    await patch(a.id, { status: "Resolved", resolvedAt: null });
 
     expect(await caretaker.list(c1)).toHaveLength(1);
   });
@@ -254,7 +213,7 @@ describe("Caretaker complaints: resolved ones vanish after 2 days", () => {
     await complain(1, "Plumbing");
     await caretaker.updateStatus(c1, a.id, "Resolved");
 
-    row(a.id).resolvedAt = ago(4);
+    await patch(a.id, { resolvedAt: ago(4) });
 
     expect(
       await caretaker.list(c1, "Plumbing"),
@@ -263,10 +222,7 @@ describe("Caretaker complaints: resolved ones vanish after 2 days", () => {
 });
 
 describe("Caretaker complaints: Excel download", () => {
-  beforeEach(() => {
-    resetMemoryStore();
-    students.clear();
-  });
+  beforeEach(() => reset());
 
   it("has one sheet per category with the columns Ticket ID, Name, Email, Room No, Contact Number, Reason, Date", async () => {
     const c1 = await asUser("c1@iitrpr.ac.in");
@@ -531,10 +487,7 @@ describe("Caretaker complaints: Excel download", () => {
 });
 
 describe("Caretaker complaints: CSV and PDF with categories and the 2-day rule", () => {
-  beforeEach(() => {
-    resetMemoryStore();
-    students.clear();
-  });
+  beforeEach(() => reset());
 
   it("CSV of a category has only that category", async () => {
     const c1 = await asUser("c1@iitrpr.ac.in");
@@ -563,7 +516,7 @@ describe("Caretaker complaints: CSV and PDF with categories and the 2-day rule",
 
     await caretaker.updateStatus(c1, old.id, "Resolved");
 
-    row(old.id).resolvedAt = ago(3);
+    await patch(old.id, { resolvedAt: ago(3) });
 
     const csv = text(await caretaker.export(c1, "csv"));
 

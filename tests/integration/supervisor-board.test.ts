@@ -1,20 +1,23 @@
 import ExcelJS from "exceljs";
+import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { BOOKING_MAX_DAYS_AHEAD } from "@/lib/constants";
 import { addDays, todayISO } from "@/lib/dates";
-import { memory, resetMemoryStore, type CleaningBookingRow } from "@/server/db/memory-store";
+import { db } from "@/server/db/client";
+import { cleaningBooking } from "@/server/db/schema";
 import { studentRepo } from "@/server/repositories/student.repo";
 import { supervisorService } from "@/server/services/supervisor.service";
+import { resetDb } from "../helpers";
 
-// These tests put bookings straight into the store, so they do not depend on the student booking code.
-// Bookings made before the student update have no slotGroup; both kinds are tested.
+// These tests put bookings straight into the database, so they do not depend on the student booking code.
+// The wing of a booking is the wing of the student who booked.
 
 const supervisor = { email: "sup@iitrpr.ac.in", role: "Supervisor" as const, userId: "s1", hostelId: null };
 const caretaker = { email: "c@iitrpr.ac.in", role: "Caretaker" as const, userId: "c1", hostelId: "satluj" };
 const day2 = () => addDays(todayISO(), 2);
 
 let counter = 0;
-type Opts = { hostelId: string; wing: string; room: string; floor: number; slot?: string; withGroup: boolean };
+type Opts = { hostelId: string; wing: string; room: string; floor: number; slot?: string };
 
 /** One student of `wing` with one confirmed booking on day+2. */
 async function book(o: Opts) {
@@ -24,15 +27,22 @@ async function book(o: Opts) {
     studentId, fullName: `Student ${n}`, googleEmail: `${studentId.toLowerCase()}@iitrpr.ac.in`,
     hostelId: o.hostelId, wing: o.wing, roomNo: o.room, course: "MTech", batch: "2026", mobileNo: "9876543210",
   } as never);
-  const seat = memory.cleaningBookings.filter(
-    (b) => b.hostelId === o.hostelId && b.floor === o.floor && b.bookingDate === day2() && b.slotStart === (o.slot ?? "09:00") &&
-      (!o.withGroup || (b as { slotGroup?: string }).slotGroup === (o.hostelId === "t6" ? "ALL" : o.wing)),
-  ).length + 1;
-  memory.cleaningBookings.push({
+  const slotStart = o.slot ?? "09:00";
+  const taken = await db
+    .select({ seat: cleaningBooking.seat })
+    .from(cleaningBooking)
+    .where(
+      and(
+        eq(cleaningBooking.hostelId, o.hostelId),
+        eq(cleaningBooking.floor, o.floor),
+        eq(cleaningBooking.bookingDate, day2()),
+        eq(cleaningBooking.slotStart, slotStart),
+      ),
+    );
+  await db.insert(cleaningBooking).values({
     bookingId: `b${n}`, studentId, hostelId: o.hostelId, floor: o.floor, roomNo: o.room,
-    bookingDate: day2(), slotStart: o.slot ?? "09:00", seat, status: "Confirmed",
-    ...(o.withGroup ? { slotGroup: o.hostelId === "t6" ? "ALL" : o.wing } : {}),
-  } as unknown as CleaningBookingRow);
+    bookingDate: day2(), slotStart, seat: taken.length + 1, status: "Confirmed",
+  });
 }
 
 async function workbook(f: { body: string | Uint8Array }) {
@@ -43,16 +53,16 @@ async function workbook(f: { body: string | Uint8Array }) {
 const cells = (ws: ExcelJS.Worksheet) =>
   ws.getRows(1, ws.rowCount)!.map((r) => (r.values as unknown[]).slice(1).map(String).join("|"));
 
-for (const withGroup of [false, true]) {
-  describe(`Supervisor board and export, wing-wise (bookings ${withGroup ? "with" : "without"} a stored slotGroup)`, () => {
-    beforeEach(resetMemoryStore);
+{
+  describe("Supervisor board and export, wing-wise", () => {
+    beforeEach(() => resetDb());
 
     it("shows today + the booking window and ONE section per wing, each with its own rooms", async () => {
-      await book({ hostelId: "satluj", wing: "SE", room: "105", floor: 0, withGroup });
-      await book({ hostelId: "satluj", wing: "SE", room: "107", floor: 0, withGroup });
-      await book({ hostelId: "satluj", wing: "SE", room: "108", floor: 0, withGroup });
-      await book({ hostelId: "satluj", wing: "SE", room: "309", floor: 2, withGroup });
-      await book({ hostelId: "satluj", wing: "SW", room: "205", floor: 1, withGroup });
+      await book({ hostelId: "satluj", wing: "SE", room: "105", floor: 0 });
+      await book({ hostelId: "satluj", wing: "SE", room: "107", floor: 0 });
+      await book({ hostelId: "satluj", wing: "SE", room: "108", floor: 0 });
+      await book({ hostelId: "satluj", wing: "SE", room: "309", floor: 2 });
+      await book({ hostelId: "satluj", wing: "SW", room: "205", floor: 1 });
 
       const board = await supervisorService.getBoard(supervisor, "satluj");
       expect(board.hostelName).toBe("Satluj");
@@ -79,16 +89,16 @@ for (const withGroup of [false, true]) {
     });
 
     it("T6 is one section for all wings and shows each room with its wing", async () => {
-      await book({ hostelId: "t6", wing: "C", room: "105", floor: 0, slot: "10:00", withGroup });
-      await book({ hostelId: "t6", wing: "D", room: "106", floor: 0, slot: "10:00", withGroup });
+      await book({ hostelId: "t6", wing: "C", room: "105", floor: 0, slot: "10:00" });
+      await book({ hostelId: "t6", wing: "D", room: "106", floor: 0, slot: "10:00" });
       const board = await supervisorService.getBoard(supervisor, "t6");
       expect(board.groups).toHaveLength(1);
       expect(board.groups[0].days[2].slots[1].cells[0].rooms).toEqual(["105 (C)", "106 (D)"]);
     });
 
     it("each hostel has its own board", async () => {
-      await book({ hostelId: "satluj", wing: "SE", room: "105", floor: 0, withGroup });
-      await book({ hostelId: "beas", wing: "BE", room: "105", floor: 0, withGroup });
+      await book({ hostelId: "satluj", wing: "SE", room: "105", floor: 0 });
+      await book({ hostelId: "beas", wing: "BE", room: "105", floor: 0 });
       expect((await supervisorService.getBoard(supervisor, "beas")).stats.booked).toBe(1);
     });
 
@@ -99,9 +109,9 @@ for (const withGroup of [false, true]) {
     });
 
     it("Excel export: one sheet per wing in one workbook; T6 one sheet; empty wings keep a sheet", async () => {
-      await book({ hostelId: "satluj", wing: "SE", room: "105", floor: 0, withGroup });
-      await book({ hostelId: "satluj", wing: "SW", room: "207", floor: 1, slot: "11:00", withGroup });
-      await book({ hostelId: "t6", wing: "E", room: "105", floor: 0, slot: "11:00", withGroup });
+      await book({ hostelId: "satluj", wing: "SE", room: "105", floor: 0 });
+      await book({ hostelId: "satluj", wing: "SW", room: "207", floor: 1, slot: "11:00" });
+      await book({ hostelId: "t6", wing: "E", room: "105", floor: 0, slot: "11:00" });
 
       const one = await supervisorService.exportSchedule(supervisor, "xlsx", "satluj");
       expect(one.filename).toBe(`cleaning-schedule-satluj-${todayISO()}.xlsx`);
@@ -122,7 +132,7 @@ for (const withGroup of [false, true]) {
     });
 
     it("PDF export is a table (Wing | Floor | Slot | Rooms to clean), one page per date", async () => {
-      await book({ hostelId: "satluj", wing: "SE", room: "105", floor: 0, withGroup });
+      await book({ hostelId: "satluj", wing: "SE", room: "105", floor: 0 });
       const pdf = await supervisorService.exportSchedule(supervisor, "pdf", "satluj");
       expect(pdf.contentType).toBe("application/pdf");
       const raw = Buffer.from(pdf.body as Uint8Array).toString("latin1");
