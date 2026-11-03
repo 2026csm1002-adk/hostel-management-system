@@ -35,7 +35,8 @@ async function place(rows: CleaningBookingRow[]): Promise<Placed[]> {
     if (student?.wing) wings.set(id, student.wing);
   }
   return rows.map((row) => {
-    const wing = wings.get(row.studentId) ?? "";
+    // The wing saved on the booking wins; older bookings fall back to the student's current wing.
+    const wing = row.wing?.trim().toUpperCase() || wings.get(row.studentId) || "";
     const stored = (row as { slotGroup?: string }).slotGroup;
     return { row, wing, group: groupOfBooking(row.hostelId, stored, wing) };
   });

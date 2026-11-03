@@ -164,6 +164,7 @@ export const cleaningService = {
       studentId: student.studentId,
       hostelId: student.hostelId,
       slotGroup: slotGroupOf(student.hostelId, student.wing),
+      wing: student.wing.trim().toUpperCase(),
       floor,
       roomNo: student.roomNo,
       bookingDate: input.date,

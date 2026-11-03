@@ -78,6 +78,10 @@ export const cleaningBooking = sqliteTable(
     roomNo: text("room_no").notNull(),
     bookingDate: text("booking_date").notNull(), // YYYY-MM-DD
     slotStart: text("slot_start").notNull(), // HH:MM
+    // The student's own wing ("SE", "BHN", "C" ...). "" on bookings made before this column existed.
+    wing: text("wing").notNull().default(""),
+    // The wing whose slot list this booking uses ("SE", "BHN", ...), or "ALL" for T6. "" on bookings made before this column existed.
+    slotGroup: text("slot_group").notNull().default(""),
     seat: integer("seat").notNull(), // CHECK(1 to 3)
     status: text("status").notNull(), // Confirmed, Done
   },
@@ -89,6 +93,7 @@ export const cleaningBooking = sqliteTable(
     ),
     unique("cleaning_slot_unique").on(
       table.hostelId,
+      table.slotGroup,
       table.floor,
       table.bookingDate,
       table.slotStart,

@@ -134,11 +134,8 @@ describe("Integration: student services (test database)", () => {
     expect(slots[1].filled).toBe(0);
   });
 
-  // KNOWN BUG, kept visible on purpose: the slot list is counted per wing, but the 3 seats are given out per floor of the
-  // whole hostel (the database key has no wing). So after Satluj SE fills a slot, Satluj SW still sees "Available" and
-  // then gets "slot is full". `it.fails` passes while the bug exists and starts failing once it is fixed: then change
-  // it to a normal `it`. (Fix: count the list per floor of the hostel, or add a wing to the seat key.)
-  it.fails("cleaning: a slot that is listed as Available can always be booked, also by the other wing of the hostel", async () => {
+  // Seats are counted per floor of each wing (T6: all wings share), so the slot list and the real limit agree.
+  it("cleaning: a slot that is listed as Available can always be booked, also by the other wing of the hostel", async () => {
     // Satluj SE: three students fill the 9:00 slot of the 1st floor
     for (let n = 1; n <= 3; n++) await profileService.upsertProfile(email(n), profile(n, `20${n}`));
     for (let n = 1; n <= 3; n++) await cleaningService.bookSlot(email(n), { date: date(), slotStart: "09:00" });

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { MAX_ROOMS_PER_SLOT } from "@/lib/constants";
 import { db } from "@/server/db/client";
-import { cleaningBooking, student } from "@/server/db/schema";
+import { cleaningBooking } from "@/server/db/schema";
 import { and, eq } from "drizzle-orm";
 
 export type CleaningBookingRow = typeof cleaningBooking.$inferSelect;
@@ -9,6 +9,7 @@ export type NewBooking = {
   studentId: string;
   hostelId: string;
   slotGroup?: string;
+  wing?: string;
   floor: number;
   roomNo: string;
   bookingDate: string;
@@ -29,24 +30,18 @@ export const cleaningBookingRepo = {
     floor: number,
     date: string,
   ): Promise<CleaningBookingRow[]> {
-    const rows = await db
-      .select({
-        booking: cleaningBooking,
-        wing: student.wing,
-      })
+    // Same key as the seat count: hostel + wing group ("ALL" for T6) + floor + date.
+    return db
+      .select()
       .from(cleaningBooking)
-      .innerJoin(student, eq(cleaningBooking.studentId, student.studentId))
       .where(
         and(
           eq(cleaningBooking.hostelId, hostelId),
+          eq(cleaningBooking.slotGroup, slotGroup),
           eq(cleaningBooking.floor, floor),
           eq(cleaningBooking.bookingDate, date),
         ),
       );
-
-    return rows
-      .filter((r) => slotGroup === "ALL" || r.wing === slotGroup)
-      .map((r) => r.booking);
   },
 
   async findByRoomAndSlot(
@@ -97,6 +92,7 @@ export const cleaningBookingRepo = {
       .where(
         and(
           eq(cleaningBooking.hostelId, input.hostelId),
+          eq(cleaningBooking.slotGroup, input.slotGroup ?? ""),
           eq(cleaningBooking.floor, input.floor),
           eq(cleaningBooking.bookingDate, input.bookingDate),
           eq(cleaningBooking.slotStart, input.slotStart),
@@ -120,6 +116,8 @@ export const cleaningBookingRepo = {
           bookingId: randomUUID(),
           studentId: input.studentId,
           hostelId: input.hostelId,
+          slotGroup: input.slotGroup ?? "",
+          wing: input.wing ?? "",
           floor: input.floor,
           roomNo: input.roomNo,
           bookingDate: input.bookingDate,
